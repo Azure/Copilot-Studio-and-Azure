@@ -12,11 +12,14 @@ We typically use Copilot Studio with Azure AI when we need to go a step further:
 
 - Optimizing and customizing our RAG implementation. 
 - It allows us to introduce information that was previously underrepresented and enrich the foundation of our LLM-based model.
+- Rapid Prototyping + Deep customization
+- Integrates natively with Microsoft 365 Platform
+- Tailored Solutions, Use fine tunning Models for specific use cases, providing more relevant and context-aware outcomes
 
 Use cases:
 
 - Enhancing answer accuracy by leveraging advanced search capabilities. ( AI Search)
-- Steering the LLM outputs in a specific style or tone. ( Fine TUnning)
+- Steering the LLM outputs in a specific style or tone. ( Fine Tunning)
   
 # When
 
