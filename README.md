@@ -42,6 +42,10 @@ Copilot Studio empowered by Azure is recommended in scenarios when:
 - [Lab 1.4](labs/1.4-ai-search): Use Azure AI Search in Copilot Studio.
 - [Lab 1.5](labs/1.5-custom-models.md): Use custom models in Copilot Studio.
 
+**Lab 2: Copilot Studio integration with Azure AI
+- [Lab 2.1](labs/2.1-ai-search-advanced.md): Use advance Azure AI Search .
+- [Lab 2.2](): Use fine tunning in Copilot Studio.
+  
 # Usage scenarios
 
 - Healthcare: Doctors use Copilot Studio with Azure AI Search to instantly find clinical guidelines and patient records, improving diagnosis and care. Fine-tuning adapts the assistant to medical terminology and hospital protocols.
