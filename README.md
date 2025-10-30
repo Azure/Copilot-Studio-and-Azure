@@ -44,7 +44,10 @@ Copilot Studio empowered by Azure is recommended in scenarios when:
 
 **Lab 2: Copilot Studio integration with Azure AI**
 - [Lab 2.1](labs/2.1-ai-search-advanced/2.1-ai-search-advanced.md): Use advance Azure AI Search .
-- [Lab 2.2](): Use fine tunning in Copilot Studio.
+- [Lab 2.2](labs/2.2-Fine-Tunned-Model/Lab2_CopilotStudio_Text_FineTuned_Model_AzureAIFoundry_PromptTool.md): Use fine tunning in Copilot Studio.
+
+** Use Copilot Studio with other accelerators**
+
   
 # Usage scenarios
 
