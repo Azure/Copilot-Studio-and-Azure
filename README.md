@@ -34,7 +34,7 @@ Copilot Studio empowered by Azure is recommended in scenarios when:
 # Learning Path
 **Lab 0: Prerequisites**
 - [Lab 0.0](labs/0.0-create-an-agent/0.0-create-an-agent.md): Create an agent for testing and monitoring.
-- [Lab 0.1](labs/0.1-enable-payg/0.1-enable-payg.md): Enable Pay-as-you-go for Copilot Studio
+- [Lab 0.1](labs/0.1-enable-payg/0.1-enable-payg.md): Understanding Copilot Studio licensing (Pay-as-you-go, P1, P3 Agent Factory) and enabling Pay-as-you-go billing
 
 **Lab1: Copilot Studio AI Native features**
 - [Lab 1.1](labs/1.1-create-topics/1.1-create-topics.md): Create Topics.
