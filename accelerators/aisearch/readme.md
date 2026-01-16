@@ -96,6 +96,30 @@ Now you can check the flow steps and familiarize yourself with its logic.
 
 ***
 
+## Detailed Flow Explanation
+
+Overview This flow enables users to interact with an AI search service by manually triggering actions. It supports three main operations: creating an index, uploading documents, and performing a search. ## Key Components 
+
+### 1. **Manual Trigger** 
+- Starts the flow via a button. - Collects user inputs for search parameters and action selection. 
+
+### 2. **Variable Initialization** 
+- Initializes variables (`select`, `search`, `filter`, `facets`, `top`, `api-version`) to store search parameters and configuration. 
+
+### 3. **Conditional Logic** 
+- Uses multiple `If` conditions to set variables only if user input is provided, ensuring flexibility. 
+
+### 4. **Switch Action** 
+- Directs the flow based on the selected action: 
+  - **CreateIndex**: Creates a new search index using provided details. 
+  - **UploadDocuments**: Uploads documents to a specified index. 
+  - **Search**: Executes a semantic search with advanced options (filter, facets, select, top). 
+
+### 5. **AI Search Actions** 
+- Each case in the Switch calls the appropriate AI search API operation.
+
+***
+
 ## Appendix — Useful references
 
 *   **Use connectors in Copilot Studio agents** (overview, prebuilt & custom). [\[learn.microsoft.com\]](https://learn.microsoft.com/en-us/microsoft-copilot-studio/advanced-connectors)
