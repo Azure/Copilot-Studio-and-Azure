@@ -52,6 +52,7 @@ Entities help the agent recognize and capture specific information from user mes
 - **Custom Entities**: For domain-specific needs, define custom entities. There are two types: **Closed List** (a finite list of categories or values) and **Regex** (pattern-based). Closed list entities are great for things like product categories, issue types, or departments (e.g., an “IssueType” entity with values {Email problem, VPN issue, Hardware, Software} and synonyms for each). Regex entities can handle formats like order numbers, employee IDs, etc. (using regular expressions to match the format). Custom entities allow the agent to understand your domain jargon and slot those values into variables.
 - **Slot Filling (Prompting for Entities)**: If a topic or tool requires a certain piece of info (like an Order Number or Date), you can link that requirement to an entity. In generative mode, the agent will auto-prompt the user for that info if it wasn’t already provided. In classic mode, you have to add a question node to ask for it. Either way (generative or classic mode), the conversation will pause until the user gives a valid answer for that entity. This ensures you don’t proceed without key details.
 - **Using Captured Data**: Once an entity is recognized, its value is stored in a variable (with the same name as the entity by default). You can use these variables later in the conversation – e.g., confirm back to the user (“I’ve booked your meeting for **{DateTime}**.”) or pass them into tools/actions (like an API call needing that parameter).
+- **Making Variables Available Across Topics**: Variables created from entities are local to the topic unless you choose otherwise. To reuse a variable in different topics (e.g., a user’s ID, region, or product selection), open the variable’s Properties and check **Usage: Global**. This makes the variable accessible throughout the entire agent, not just the current topic.
 
 Entities aren’t mandatory for simple bots, but they become crucial as soon as your agent needs structured info from natural language. They essentially give your Copilot some NLU (Natural Language Understanding) superpowers beyond plain intent matching, making interactions more precise and context-aware.
 
@@ -165,6 +166,7 @@ Building a Copilot Studio agent involves balancing structured design (topics, fl
 *Tip*: Start simple and add complexity as needed: for a basic Q&A bot, you might only need generative mode with a few knowledge sources and minimal topics; for a complex workflow assistant, you’ll design topics and integrate multiple tools. Always keep the user’s experience in mind – clarity, correctness, and convenience. 
 
 By leveraging the rich capabilities of Copilot Studio following the best practices above, you can implement a successful Copilot agent that truly augments your users’ abilities. Happy building
+
 
 
 
