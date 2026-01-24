@@ -73,7 +73,6 @@ This enables your Copilot to answer questions based on video content, not just t
    - **Region:** Select a region that supports all services (e.g., Sweden Central, East US 2)
 4. Click **"Review + create"** → **"Create"**
 
-![Create Resource Group](images/01-create-resource-group.png)
 
 ## 2.2 Create Storage Account
 
@@ -83,20 +82,16 @@ This enables your Copilot to answer questions based on video content, not just t
    - **Storage account name:** `videoragstorage` (must be globally unique)
    - **Region:** Same as resource group
    - **Performance:** Standard
-   - **Redundancy:** LRS
 
-![Create Storage Account](images/02-create-storage-account.png)
 
 3. After creation, go to **Containers** → **"+ Container"**
 4. Create container named: `uploadedvideocontent`
-5. Set **Public access level:** Private
 
-![Create Container](images/03-create-container.png)
 
 ## 2.3 Create Azure AI Services
 
 1. Click **"Create a resource"** → Search for **"Azure AI services"**
-2. Select **"Azure AI services"** (multi-service account)
+2. Select **"Azure AI services"** 
 3. Configure:
    - **Resource group:** `VideoRAG-Project-RG`
    - **Region:** Same region (must support Content Understanding)
@@ -149,7 +144,7 @@ This enables your Copilot to answer questions based on video content, not just t
 
 ## 3.2 Configure Fields
 
-Add the following fields:
+Add the following fields as an example:
 
 | Field Name | Type | Key | Searchable | Filterable | Retrievable |
 |------------|------|-----|------------|------------|-------------|
