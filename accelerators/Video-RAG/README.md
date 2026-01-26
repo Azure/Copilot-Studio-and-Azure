@@ -582,6 +582,3 @@ The AI Search index returns matching videos with their source URLs, enabling pla
 ---
 
 ## Additional Links
-
-- [Azure AI Search Flow Accelerator](../aisearch/)
-- [Copilot Studio and Azure Repository](https://github.com/Azure/Copilot-Studio-and-Azure)
