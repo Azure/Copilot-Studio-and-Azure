@@ -146,16 +146,7 @@ This enables your Copilot to answer questions based on video content, not just t
 
 Add the following fields as an example:
 
-| Field Name | Type | Key | Searchable | Filterable | Retrievable |
-|------------|------|-----|------------|------------|-------------|
-| `id` | Edm.String | ✅ | ❌ | ❌ | ✅ |
-| `title` | Edm.String | ❌ | ✅ | ✅ | ✅ |
-| `sourceUrl` | Edm.String | ❌ | ❌ | ❌ | ✅ |
-| `type` | Edm.String | ❌ | ❌ | ✅ | ✅ |
-| `summary` | Edm.String | ❌ | ✅ | ❌ | ✅ |
-| `content` | Edm.String | ❌ | ✅ | ❌ | ✅ |
-| `createdAt` | Edm.DateTimeOffset | ❌ | ❌ | ✅ | ✅ |
-| `contentVector` | Collection(Edm.Single) | ❌ | ❌ | ❌ | ❌ |
+
 
 ![Index Fields](images/08-index-fields.png)
 
