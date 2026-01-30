@@ -57,7 +57,7 @@ This enables your Copilot to answer questions based on video content, not just t
 | File | Description |
 |------|-------------|
 | `VideoRAG_LogicApp.zip` | Exportable Logic App workflow |
-| `ai-search-index-schema.json` | AI Search index definition |
+| `ai-search-index-schema.json` | AI Search index definition sample|
 | `readme.md` | This documentation |
 | `images-samples/` | Screenshot references |
 
