@@ -18,6 +18,10 @@ This enables your Copilot to answer questions based on video content, not just t
 - Educational content repositories
 - Media asset management with natural language search
 
+### Design
+
+![Video RAG Architecture](images-samples/arch.png)
+
 ---
 
 # 1) Prerequisites & What You'll Need
