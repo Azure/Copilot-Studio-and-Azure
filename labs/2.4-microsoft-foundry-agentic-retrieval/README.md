@@ -1,15 +1,23 @@
 # 2.4 Microsoft Foundry Agentic Retrieval with Foundry IQ
 ## Copilot Studio + Foundry IQ Multi-Source Knowledge Agents
 
+
+
 > ⚠️ **EDUCATIONAL USE ONLY**: This workshop is designed for hands-on learning and experimentation. It is **not intended or recommended for production use**. For production deployments, additional security, error handling, monitoring, and enterprise features would be required.
 
 > 🚨 **CRITICAL: SAME TENANT REQUIREMENT**: Copilot Studio and Microsoft Foundry (Azure AI Foundry) **must be in the same Microsoft Entra ID (Azure AD) tenant** for the agents to communicate. This solution will NOT work if they are in different tenants. Ensure your Copilot Studio environment and Azure AI Foundry project are both associated with the same tenant before proceeding.
 
 ---
 
-## 🚀 The Innovation: Three Powerhouses Working Together
+## Objectives
 
-This workshop showcases the convergence of Microsoft's most advanced AI technologies—**Microsoft Foundry**, **Foundry IQ**, and **Copilot Studio**—working in harmony to create intelligent, knowledge-grounded agents that transform how enterprises work.
+This lab showcases the convergence of Microsoft's most advanced AI technologies—**Microsoft Foundry**, **Foundry IQ**, and **Copilot Studio**—working in harmony to create intelligent, knowledge-grounded agents that transform how enterprises work.
+
+## Prerequisites
+
+It's required to have completed **[Lab 0.0 - Create an agent](../0.0-create-an-agent/0.0-create-an-agent.md)** and **[Lab 1.4 AI Search](../1.4-ai-search/1.4-ai-search.md)** to follow this part.
+
+## Contents
 
 ### 🏭 Microsoft Foundry (Azure AI Foundry)
 
@@ -103,7 +111,7 @@ Financial institutions face significant challenges in fraud investigation:
 
 ### The AI-Powered Solution
 
-This workshop demonstrates **Foundry IQ** - Microsoft's unified knowledge layer that enables AI agents to intelligently query multiple unstructured knowledge sources through a single endpoint.
+This lab demonstrates **Foundry IQ** - Microsoft's unified knowledge layer that enables AI agents to intelligently query multiple unstructured knowledge sources through a single endpoint.
 
 **How This Helps Your Business:**
 
@@ -293,7 +301,7 @@ You need an Azure subscription with an **AI Foundry project** already created.
 
 ### ✅ Step 4: Azure AI Search Connection
 
-Your AI Foundry project must have an **Azure AI Search** connection configured.
+Your AI Foundry project must have an **Azure AI Search** connection configured. ( We create one conection in lab 1.4).
 
 ### ✅ Step 5: Required RBAC Roles
 
