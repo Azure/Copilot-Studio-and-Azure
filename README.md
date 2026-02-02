@@ -2,9 +2,17 @@
 
 This solution empowers organisations to rapidly build and deploy intelligent copilots using a low-code platform integrated with Azure AI. Enabling Fusion Teams, IT Leaders, and Solution Architects with Copilot Studio and Azure—building secure, scalable, and task-specific AI workflows for enterprise innovation. This repository provides a clear and practical guide to implementing Copilot Studio with Azure, featuring real-world examples and actionable insights on when and how this combination delivers value.
 
+The repository also showcases the convergence of Microsoft's most advanced AI technologies—**Microsoft Foundry**, **Foundry IQ**, and **Copilot Studio**—working in harmony to create intelligent, knowledge-grounded agents that transform how enterprises work.
+
 # What
 
-Copilot Studio is a graphical, low-code tool for building agents and agent flows, whose capabilities can be further enhanced by leveraging the full potential of Azure AI
+Copilot Studio is a graphical, low-code tool for building agents and agent flows, whose capabilities can be further enhanced by leveraging the full potential of Azure AI.
+
+**Foundry IQ** is Microsoft's breakthrough unified knowledge layer that transforms how AI agents access and reason over enterprise data. It's not just RAG—it's intelligent, multi-source knowledge retrieval that understands context and intent. Key capabilities include:
+- **Agentic Retrieval**: The AI plans its search strategy, queries multiple sources, and synthesizes coherent responses
+- **Multi-Source Knowledge Bases**: Combine multiple data sources in one queryable layer
+- **Enterprise Security**: Document-level permissions, audit trails, and compliance
+- **36% better response relevance** compared to traditional RAG approaches
 
 # Why
 
@@ -15,11 +23,14 @@ We typically use Copilot Studio with Azure AI when we need to go a step further:
 - Rapid Prototyping + Deep customization
 - Integrates natively with Microsoft 365 Platform
 - Tailored Solutions, Use fine tunning Models for specific use cases, providing more relevant and context-aware outcomes
+- **Unified Knowledge Access**: Single AI agent queries across multiple specialized knowledge bases simultaneously with automatic source routing
+- **Hybrid Human-AI Workflow**: Copilot Studio handles initial triage, Foundry Agent provides deep knowledge retrieval, humans make final decisions with AI-powered recommendations
 
 Use cases:
 
-- Enhancing answer accuracy by leveraging advanced search capabilities. ( AI Search)
-- Steering the LLM outputs in a specific style or tone. ( Fine Tunning)
+- Enhancing answer accuracy by leveraging advanced search capabilities. (AI Search)
+- Steering the LLM outputs in a specific style or tone. (Fine Tunning)
+- Intelligent multi-source knowledge retrieval with agentic reasoning. (Foundry IQ)
   
 # When
 
@@ -30,6 +41,9 @@ Copilot Studio empowered by Azure is recommended in scenarios when:
 - Involving complex databases that demand customization. 
 - You have a clear understanding of what needs to be emphasized in the search process. 
 - You have access to thousands of high-quality examples and verified data.
+- You need to query multiple knowledge sources simultaneously with intelligent routing.
+- Deep expertise is required on demand with grounded, cited responses.
+- Complex scenarios require both quick lookups and comprehensive analysis (hybrid responses).
 
 # Learning Path
 **Lab 0: Prerequisites**
@@ -48,6 +62,7 @@ Copilot Studio empowered by Azure is recommended in scenarios when:
 - [Lab 2.1](labs/2.1-ai-search-advanced/2.1-ai-search-advanced.md): Use advance Azure AI Search.
 - [Lab 2.2](labs/2.2-Fine-Tunned-Model/Lab2_CopilotStudio_Text_FineTuned_Model_AzureAIFoundry_PromptTool.md): Use fine tunning in Copilot Studio.
 - [Lab 2.3](labs/2.3-ai-search-sharepoint-indexer/2.3-ai-search-sharepoint-indexer.md): AI search Sharepoint Indexer.
+- [Lab 2.4](labs/2.4-microsoft-foundry-agentic-retrieval/README.md): Microsoft Foundry Agentic Retrieval with Foundry IQ.
 
 **Combine accelerators**
 - [Best Practices](docs/Best-Practices_decision-tree_for_building_copilot_studio_agent.md): Decision tree and best practices to build an agent. 
@@ -60,6 +75,7 @@ Copilot Studio empowered by Azure is recommended in scenarios when:
 - Financial Services: Compliance teams leverage Copilot Studio to search regulatory documents and audit trails, ensuring fast, accurate responses to legal queries. Fine-tuning customizes the bot for specific regulations and internal policies.
 - Retail & E-commerce: Customer service agents use Copilot Studio and Azure AI Search to answer product questions and check inventory, improving response speed and accuracy. AI search refines results based on context and user intent.
 - Energy & Utilities: Technicians access Copilot Studio with Azure AI Search to retrieve maintenance records and safety procedures, boosting field efficiency. Intelligent search filters ensure compliance and operational safety.
+- Fraud Investigation: Financial analysts use Copilot Studio with Foundry IQ to investigate suspicious transactions by querying fraud patterns, regulatory compliance guidelines, and investigation procedures simultaneously. Foundry IQ's agentic retrieval intelligently selects relevant sources, providing grounded answers with citations—achieving 80% reduction in research time and 60% improvement in fraud detection accuracy.
 
 
 ## Contributing
