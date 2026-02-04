@@ -8,11 +8,6 @@ Copilot Studio provides native capabilities for generating answers and connectin
 
  [Content Flow](https://github.com/Azure/contentflow)  is a comprehensive, enterprise-ready document processing solution built on Azure that enables organizations to rapidly deploy and scale document processing workflows. This accelerator combines the power of Azure AI services, cloud-native architecture, and modern development practices to provide a complete platform for document ingestion, processing, and analysis.
 
-## Prerequisites
-
-Before starting this lab, ensure you have completed the following prerequisites:
-
-- **[Lab 0.0 - Create an agent](../0.0-create-an-agent/0.0-create-an-agent.md)**
 
 ## AI Search Custom connector Flow
 
@@ -29,6 +24,9 @@ Before starting this lab, ensure you have completed the following prerequisites:
   - **UploadDocuments**: Uploads documents to a specified index. 
   - **Search**: Executes a semantic search with advanced options. ## Summary AI_Search_HTTP_Flow_Demo streamlines Azure AI Search management, allowing users to create indexes, upload data, and run complex searches—all controlled by user input at runtime.
 
-## Prerequisites
+## Video RAG Accelerator
 
-No prerequisites are needed to deploy this flow.
+The [Video RAG Accelerator](/accelerators/Video-RAG/) enables intelligent question-and-answer over training videos by automatically extracting video content, transforming it into structured knowledge, and grounding responses in Azure AI Search for use in Copilot Studio.
+Training videos uploaded to storage are automatically processed end-to-end using event-driven Azure services. Video content is analyzed using Azure AI Content Understanding (Video Analyzer) to extract transcripts, summaries, and contextual markdown. The extracted information is normalized and indexed in Azure AI Search, enabling fast, accurate, and scalable retrieval.
+Users can then ask natural-language questions in Copilot Studio, receiving answers grounded directly in the video content.
+
