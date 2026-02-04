@@ -607,6 +607,8 @@ Add **Initialize variable** actions for:
 }
 ```
 
+> **🔐 Production Tip:** In production environments, consider using **Managed Identity** instead of API keys for authenticating to AI Search. This eliminates the need to store and rotate secrets. See [Azure AI Search RBAC documentation](https://learn.microsoft.com/en-us/azure/search/search-security-rbac) for setup instructions.
+
 
 ### In False branch:
 
