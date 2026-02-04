@@ -1,0 +1,836 @@
+{
+    "definition": {
+        "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+        "contentVersion": "1.0.0.0",
+        "triggers": {
+            "When_a_resource_event_occurs": {
+                "type": "ApiConnectionWebhook",
+                "inputs": {
+                    "host": {
+                        "connection": {
+                            "name": "@parameters('$connections')['azureeventgrid-1']['connectionId']"
+                        }
+                    },
+                    "body": {
+                        "properties": {
+                            "topic": "/subscriptions/<your-subscription-id>/resourceGroups/<your-resource-group>/providers/Microsoft.Storage/storageAccounts/<your-storage-account>",
+                            "destination": {
+                                "endpointType": "webhook",
+                                "properties": {
+                                    "endpointUrl": "@listCallbackUrl()"
+                                }
+                            },
+                            "filter": {
+                                "includedEventTypes": [
+                                    "Microsoft.Storage.BlobCreated"
+                                ],
+                                "subjectBeginsWith": "/blobServices/default/containers/uploadedvideocontent"
+                            }
+                        }
+                    },
+                    "path": "/subscriptions/@{encodeURIComponent('<your-subscription-id>')}/providers/@{encodeURIComponent('Microsoft.Storage.StorageAccounts')}/resource/eventSubscriptions",
+                    "queries": {
+                        "x-ms-api-version": "2017-09-15-preview"
+                    }
+                },
+                "description": "Triggers when a new blob is created in the uploadedvideocontent container. Concurrency limited to 1 to prevent duplicate processing.",
+                "runtimeConfiguration": {
+                    "concurrency": {
+                        "runs": 50
+                    }
+                }
+            }
+        },
+        "actions": {
+            "Parse_trigger_body": {
+                "runAfter": {},
+                "type": "ParseJson",
+                "inputs": {
+                    "content": "@first(triggerBody())",
+                    "schema": {
+                        "type": "object",
+                        "properties": {
+                            "topic": {
+                                "type": "string"
+                            },
+                            "subject": {
+                                "type": "string"
+                            },
+                            "eventType": {
+                                "type": "string"
+                            },
+                            "id": {
+                                "type": "string"
+                            },
+                            "data": {
+                                "type": "object",
+                                "properties": {
+                                    "api": {
+                                        "type": "string"
+                                    },
+                                    "clientRequestId": {
+                                        "type": "string"
+                                    },
+                                    "requestId": {
+                                        "type": "string"
+                                    },
+                                    "eTag": {
+                                        "type": "string"
+                                    },
+                                    "contentType": {
+                                        "type": "string"
+                                    },
+                                    "contentLength": {
+                                        "type": "integer"
+                                    },
+                                    "blobType": {
+                                        "type": "string"
+                                    },
+                                    "accessTier": {
+                                        "type": "string"
+                                    },
+                                    "url": {
+                                        "type": "string"
+                                    },
+                                    "sequencer": {
+                                        "type": "string"
+                                    },
+                                    "storageDiagnostics": {
+                                        "type": "object",
+                                        "properties": {
+                                            "batchId": {
+                                                "type": "string"
+                                            }
+                                        }
+                                    }
+                                }
+                            },
+                            "dataVersion": {
+                                "type": "string"
+                            },
+                            "metadataVersion": {
+                                "type": "string"
+                            },
+                            "eventTime": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                },
+                "description": "Parse the Event Grid trigger payload to extract blob information including URL, content type, and metadata."
+            },
+            "varBlobInfo": {
+                "runAfter": {
+                    "Parse_trigger_body": [
+                        "Succeeded"
+                    ]
+                },
+                "type": "InitializeVariable",
+                "inputs": {
+                    "variables": [
+                        {
+                            "name": "vBlobUrl",
+                            "type": "string",
+                            "value": "@{body('Parse_trigger_body')?['data']?['url']}"
+                        },
+                        {
+                            "name": "vBlobName",
+                            "type": "string",
+                            "value": "@{last(split(body('Parse_trigger_body')?['data']?['url'],'/'))}"
+                        },
+                        {
+                            "name": "vContainer",
+                            "type": "string",
+                            "value": "@{split(body('Parse_trigger_body')?['data']?['url'],'/')[3]}"
+                        }
+                    ]
+                },
+                "description": "Initialize variables for blob URL, blob name (filename), and container name extracted from the event data."
+            },
+            "varDocumentId": {
+                "runAfter": {
+                    "varBlobInfo": [
+                        "Succeeded"
+                    ]
+                },
+                "type": "InitializeVariable",
+                "inputs": {
+                    "variables": [
+                        {
+                            "name": "vDocumentId",
+                            "type": "string",
+                            "value": "@{base64(variables('vBlobUrl'))}"
+                        }
+                    ]
+                },
+                "description": "Create a deterministic document ID from the blob URL by replacing special characters. This ensures the same video always gets the same ID, preventing duplicates."
+            },
+            "Set_defaults": {
+                "runAfter": {
+                    "varDocumentId": [
+                        "Succeeded"
+                    ]
+                },
+                "type": "Http",
+                "inputs": {
+                    "uri": "https://<your-ai-services>.services.ai.azure.com/contentunderstanding/defaults?api-version=2025-11-01",
+                    "method": "PATCH",
+                    "headers": {
+                        "Content-Type": "application/json"
+                    },
+                    "body": {
+                        "modelDeployments": {
+                            "gpt-4.1": "gpt-4.1",
+                            "gpt-4.1-mini": "gpt-4.1-mini",
+                            "text-embedding-3-large": "text-embedding-3-large"
+                        },
+                        "storage": {
+                            "type": "AzureBlob",
+                            "containerUri": "https://<your-storage-account>.blob.core.windows.net/uploadedvideocontent"
+                        }
+                    },
+                    "authentication": {
+                        "type": "ManagedServiceIdentity",
+                        "audience": "https://cognitiveservices.azure.com"
+                    }
+                },
+                "description": "Configure Content Understanding service defaults including model deployments (GPT-4.1, embedding model) and storage location for video processing.",
+                "runtimeConfiguration": {
+                    "contentTransfer": {
+                        "transferMode": "Chunked"
+                    }
+                }
+            },
+            "Call_Content_Understanding": {
+                "runAfter": {
+                    "Set_defaults": [
+                        "Succeeded"
+                    ]
+                },
+                "type": "Http",
+                "inputs": {
+                    "uri": "https://<your-ai-services>.cognitiveservices.azure.com/contentunderstanding/analyzers/prebuilt-videoSearch:analyze?api-version=2025-11-01",
+                    "method": "POST",
+                    "headers": {
+                        "Content-Type": "application/json"
+                    },
+                    "body": {
+                        "inputs": [
+                            {
+                                "url": "@{variables('vBlobUrl')}"
+                            }
+                        ]
+                    },
+                    "authentication": {
+                        "type": "ManagedServiceIdentity",
+                        "audience": "https://cognitiveservices.azure.com"
+                    }
+                },
+                "description": "Start async video analysis using Content Understanding prebuilt-videoSearch analyzer. Returns an operation location for polling.",
+                "runtimeConfiguration": {
+                    "contentTransfer": {
+                        "transferMode": "Chunked"
+                    }
+                }
+            },
+            "Parse_CU_Body": {
+                "runAfter": {
+                    "Call_Content_Understanding": [
+                        "Succeeded"
+                    ]
+                },
+                "type": "ParseJson",
+                "inputs": {
+                    "content": "@body('Call_Content_Understanding')",
+                    "schema": {
+                        "type": "object",
+                        "properties": {
+                            "id": {
+                                "type": "string"
+                            },
+                            "status": {
+                                "type": "string"
+                            },
+                            "result": {
+                                "type": "object",
+                                "properties": {
+                                    "analyzerId": {
+                                        "type": "string"
+                                    },
+                                    "apiVersion": {
+                                        "type": "string"
+                                    },
+                                    "createdAt": {
+                                        "type": "string"
+                                    },
+                                    "warnings": {
+                                        "type": "array"
+                                    },
+                                    "contents": {
+                                        "type": "array"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "description": "Parse the initial Content Understanding response to extract operation ID and initial status."
+            },
+            "varOperationLocation": {
+                "runAfter": {
+                    "Parse_CU_Body": [
+                        "Succeeded"
+                    ]
+                },
+                "type": "InitializeVariable",
+                "inputs": {
+                    "variables": [
+                        {
+                            "name": "vOperationLocation",
+                            "type": "string",
+                            "value": "@{outputs('Call_Content_Understanding')?['headers']?['Operation-Location']}"
+                        }
+                    ]
+                },
+                "description": "Store the Operation-Location header URL which is used to poll for analysis completion status."
+            },
+            "varAnalyzerStatus": {
+                "runAfter": {
+                    "varOperationLocation": [
+                        "Succeeded"
+                    ]
+                },
+                "type": "InitializeVariable",
+                "inputs": {
+                    "variables": [
+                        {
+                            "name": "vAnalyzerStatus",
+                            "type": "string",
+                            "value": "notStarted"
+                        }
+                    ]
+                },
+                "description": "Initialize status tracking variable to monitor Content Understanding analysis progress."
+            },
+            "Until_succeeded": {
+                "actions": {
+                    "Delay_15_seconds": {
+                        "type": "Wait",
+                        "inputs": {
+                            "interval": {
+                                "count": 15,
+                                "unit": "Second"
+                            }
+                        },
+                        "description": "Wait 15 seconds between status checks to avoid overwhelming the API."
+                    },
+                    "Check_Status": {
+                        "runAfter": {
+                            "Delay_15_seconds": [
+                                "Succeeded"
+                            ]
+                        },
+                        "type": "Http",
+                        "inputs": {
+                            "uri": "@variables('vOperationLocation')",
+                            "method": "GET",
+                            "authentication": {
+                                "type": "ManagedServiceIdentity",
+                                "audience": "https://cognitiveservices.azure.com"
+                            }
+                        },
+                        "description": "Poll the operation location URL to check if video analysis has completed.",
+                        "runtimeConfiguration": {
+                            "contentTransfer": {
+                                "transferMode": "Chunked"
+                            }
+                        }
+                    },
+                    "Parse_JSON": {
+                        "runAfter": {
+                            "Check_Status": [
+                                "Succeeded"
+                            ]
+                        },
+                        "type": "ParseJson",
+                        "inputs": {
+                            "content": "@body('Check_Status')",
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "id": {
+                                        "type": "string"
+                                    },
+                                    "status": {
+                                        "type": "string"
+                                    },
+                                    "result": {
+                                        "type": "object",
+                                        "properties": {
+                                            "analyzerId": {
+                                                "type": "string"
+                                            },
+                                            "apiVersion": {
+                                                "type": "string"
+                                            },
+                                            "createdAt": {
+                                                "type": "string"
+                                            },
+                                            "warnings": {
+                                                "type": "array"
+                                            },
+                                            "contents": {
+                                                "type": "array"
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                        "description": "Parse the status check response to extract current analysis status."
+                    },
+                    "Set_variable": {
+                        "runAfter": {
+                            "Parse_JSON": [
+                                "Succeeded"
+                            ]
+                        },
+                        "type": "SetVariable",
+                        "inputs": {
+                            "name": "vAnalyzerStatus",
+                            "value": "@body('Parse_JSON')?['status']"
+                        },
+                        "description": "Update the status variable with the current analysis status (notStarted, running, succeeded, or failed)."
+                    }
+                },
+                "runAfter": {
+                    "varAnalyzerStatus": [
+                        "Succeeded"
+                    ]
+                },
+                "expression": "@or(equals(variables('vAnalyzerStatus'), 'succeeded'), equals(variables('vAnalyzerStatus'), 'failed'))",
+                "limit": {
+                    "count": 120,
+                    "timeout": "PT1H"
+                },
+                "type": "Until",
+                "description": "Poll Content Understanding every 15 seconds until analysis succeeds or fails. Maximum 120 iterations or 1 hour timeout."
+            },
+            "Condition_Analysis_Failed": {
+                "actions": {
+                    "Terminate_Failed": {
+                        "type": "Terminate",
+                        "inputs": {
+                            "runStatus": "Failed",
+                            "runError": {
+                                "code": "AnalysisFailed",
+                                "message": "Content Understanding analysis failed for @{variables('vBlobName')}"
+                            }
+                        },
+                        "description": "Terminate the workflow with a failed status if Content Understanding could not analyze the video."
+                    }
+                },
+                "runAfter": {
+                    "Until_succeeded": [
+                        "Succeeded"
+                    ]
+                },
+                "else": {
+                    "actions": {}
+                },
+                "expression": {
+                    "or": [
+                        {
+                            "equals": [
+                                "@variables('vAnalyzerStatus')",
+                                "failed"
+                            ]
+                        }
+                    ]
+                },
+                "type": "If",
+                "description": "Check if the Content Understanding analysis failed and terminate the workflow if so."
+            },
+            "Parse_Call_Result_JSON": {
+                "runAfter": {
+                    "Condition_Analysis_Failed": [
+                        "Succeeded"
+                    ]
+                },
+                "type": "ParseJson",
+                "inputs": {
+                    "content": "@body('Check_Status')",
+                    "schema": {
+                        "type": "object",
+                        "properties": {
+                            "id": {
+                                "type": "string"
+                            },
+                            "status": {
+                                "type": "string"
+                            },
+                            "result": {
+                                "type": "object",
+                                "properties": {
+                                    "analyzerId": {
+                                        "type": "string"
+                                    },
+                                    "apiVersion": {
+                                        "type": "string"
+                                    },
+                                    "createdAt": {
+                                        "type": "string"
+                                    },
+                                    "warnings": {
+                                        "type": "array"
+                                    },
+                                    "contents": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "object",
+                                            "properties": {
+                                                "markdown": {
+                                                    "type": "string"
+                                                },
+                                                "fields": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "Summary": {
+                                                            "type": "object",
+                                                            "properties": {
+                                                                "type": {
+                                                                    "type": "string"
+                                                                },
+                                                                "valueString": {
+                                                                    "type": "string"
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                },
+                                                "kind": {
+                                                    "type": "string"
+                                                },
+                                                "startTimeMs": {
+                                                    "type": "integer"
+                                                },
+                                                "endTimeMs": {
+                                                    "type": "integer"
+                                                },
+                                                "width": {
+                                                    "type": "integer"
+                                                },
+                                                "height": {
+                                                    "type": "integer"
+                                                },
+                                                "KeyFrameTimesMs": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "type": "integer"
+                                                    }
+                                                },
+                                                "transcriptPhrases": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                            "speaker": {
+                                                                "type": "string"
+                                                            },
+                                                            "startTimeMs": {
+                                                                "type": "integer"
+                                                            },
+                                                            "endTimeMs": {
+                                                                "type": "integer"
+                                                            },
+                                                            "text": {
+                                                                "type": "string"
+                                                            },
+                                                            "confidence": {
+                                                                "type": "number"
+                                                            },
+                                                            "words": {
+                                                                "type": "array",
+                                                                "items": {
+                                                                    "type": "object",
+                                                                    "properties": {
+                                                                        "startTimeMs": {
+                                                                            "type": "integer"
+                                                                        },
+                                                                        "endTimeMs": {
+                                                                            "type": "integer"
+                                                                        },
+                                                                        "text": {
+                                                                            "type": "string"
+                                                                        }
+                                                                    }
+                                                                }
+                                                            },
+                                                            "locale": {
+                                                                "type": "string"
+                                                            }
+                                                        }
+                                                    }
+                                                },
+                                                "cameraShotTimesMs": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "type": "integer"
+                                                    }
+                                                },
+                                                "mimeType": {
+                                                    "type": "string"
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            },
+                            "usage": {
+                                "type": "object",
+                                "properties": {
+                                    "videoHours": {
+                                        "type": "number"
+                                    },
+                                    "contextualizationTokens": {
+                                        "type": "integer"
+                                    },
+                                    "tokens": {
+                                        "type": "object",
+                                        "properties": {
+                                            "gpt-4.1-mini-input": {
+                                                "type": "integer"
+                                            },
+                                            "gpt-4.1-mini-output": {
+                                                "type": "integer"
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "description": "Parse the final Content Understanding result with full schema including transcript phrases, summaries, and video metadata."
+            },
+            "varTranscriptText": {
+                "runAfter": {
+                    "Parse_Call_Result_JSON": [
+                        "Succeeded"
+                    ]
+                },
+                "type": "InitializeVariable",
+                "inputs": {
+                    "variables": [
+                        {
+                            "name": "vTranscriptText",
+                            "type": "string",
+                            "value": ""
+                        }
+                    ]
+                },
+                "description": "Initialize empty string variable to accumulate the full transcript text from all video segments."
+            },
+            "varSummaryText": {
+                "runAfter": {
+                    "varTranscriptText": [
+                        "Succeeded"
+                    ]
+                },
+                "type": "InitializeVariable",
+                "inputs": {
+                    "variables": [
+                        {
+                            "name": "vSummaryText",
+                            "type": "string",
+                            "value": ""
+                        }
+                    ]
+                },
+                "description": "Initialize empty string variable to accumulate AI-generated summaries from all video segments."
+            },
+            "For_each_content": {
+                "foreach": "@body('Parse_Call_Result_JSON')?['result']?['contents']",
+                "actions": {
+                    "Append_Summary": {
+                        "type": "AppendToStringVariable",
+                        "inputs": {
+                            "name": "vSummaryText",
+                            "value": "@{if(equals(items('For_each_content')?['fields']?['Summary']?['valueString'], null), '', concat(items('For_each_content')?['fields']?['Summary']?['valueString'], ' '))}"
+                        },
+                        "description": "Append the AI-generated summary for this video segment to the summary text variable, handling null values."
+                    },
+                    "Select_Phrases": {
+                        "runAfter": {
+                            "Append_Summary": [
+                                "Succeeded"
+                            ]
+                        },
+                        "type": "Select",
+                        "inputs": {
+                            "from": "@if(equals(items('For_each_content')?['transcriptPhrases'], null), json('[]'), items('For_each_content')?['transcriptPhrases'])",
+                            "select": "@item()?['text']"
+                        },
+                        "description": "Extract just the text from each transcript phrase, creating an array of spoken text strings."
+                    },
+                    "Append_Transcript": {
+                        "runAfter": {
+                            "Select_Phrases": [
+                                "Succeeded"
+                            ]
+                        },
+                        "type": "AppendToStringVariable",
+                        "inputs": {
+                            "name": "vTranscriptText",
+                            "value": "@{join(body('Select_Phrases'), ' ')} "
+                        },
+                        "description": "Join all transcript phrases with spaces and append to the full transcript text variable."
+                    }
+                },
+                "runAfter": {
+                    "varSummaryText": [
+                        "Succeeded"
+                    ]
+                },
+                "type": "Foreach",
+                "description": "Iterate through each content segment from the video analysis to extract and accumulate transcripts and summaries."
+            },
+            "Condition_Has_Content": {
+                "actions": {
+                    "Compose_Search_Content": {
+                        "type": "Compose",
+                        "inputs": "@take(concat(trim(variables('vSummaryText')), ' ', trim(variables('vTranscriptText'))), 8000)",
+                        "description": "Combine summary and transcript text, limited to 8000 characters to stay within embedding model token limits."
+                    },
+                    "Generate_Embedding": {
+                        "runAfter": {
+                            "Compose_Search_Content": [
+                                "Succeeded"
+                            ]
+                        },
+                        "type": "Http",
+                        "inputs": {
+                            "uri": "https://<your-openai-account>.openai.azure.com/openai/deployments/text-embedding-3-large/embeddings?api-version=2024-06-01",
+                            "method": "POST",
+                            "headers": {
+                                "Content-Type": "application/json"
+                            },
+                            "body": {
+                                "input": "@{outputs('Compose_Search_Content')}"
+                            },
+                            "authentication": {
+                                "type": "ManagedServiceIdentity",
+                                "audience": "https://cognitiveservices.azure.com"
+                            },
+                            "retryPolicy": {
+                                "type": "exponential",
+                                "count": 3,
+                                "interval": "PT5S"
+                            }
+                        },
+                        "description": "Generate a 3072-dimension vector embedding using Azure OpenAI text-embedding-3-large model for semantic search.",
+                        "runtimeConfiguration": {
+                            "contentTransfer": {
+                                "transferMode": "Chunked"
+                            }
+                        }
+                    },
+                    "Push_To_AI_Search": {
+                        "runAfter": {
+                            "Generate_Embedding": [
+                                "Succeeded"
+                            ]
+                        },
+                        "type": "Http",
+                        "inputs": {
+                            "uri": "https://<your-search-service>.search.windows.net/indexes/<your-index-name>/docs/index?api-version=2024-07-01",
+                            "method": "POST",
+                            "headers": {
+                                "Content-Type": "application/json",
+                                "api-key": "<your-search-admin-key>"
+                            },
+                            "body": {
+                                "value": [
+                                    {
+                                        "@@search.action": "mergeOrUpload",
+                                        "id": "@{variables('vDocumentId')}",
+                                        "title": "@{variables('vBlobName')}",
+                                        "sourceUrl": "@{variables('vBlobUrl')}",
+                                        "type": "training-video",
+                                        "summary": "@{trim(variables('vSummaryText'))}",
+                                        "content": "@{trim(variables('vTranscriptText'))}",
+                                        "createdAt": "@{utcNow()}",
+                                        "contentVector": "@body('Generate_Embedding')?['data'][0]['embedding']"
+                                    }
+                                ]
+                            },
+                            "retryPolicy": {
+                                "type": "exponential",
+                                "count": 3,
+                                "interval": "PT5S"
+                            }
+                        },
+                        "description": "Push the document with vector embedding to AI Search using mergeOrUpload to update existing or create new document.",
+                        "runtimeConfiguration": {
+                            "contentTransfer": {
+                                "transferMode": "Chunked"
+                            }
+                        }
+                    }
+                },
+                "runAfter": {
+                    "For_each_content": [
+                        "Succeeded"
+                    ]
+                },
+                "else": {
+                    "actions": {
+                        "Terminate_No_Content": {
+                            "type": "Terminate",
+                            "inputs": {
+                                "runStatus": "Failed",
+                                "runError": {
+                                    "code": "NoContent",
+                                    "message": "No transcript content extracted from @{variables('vBlobName')}"
+                                }
+                            },
+                            "description": "Terminate with failure if no transcript content was extracted from the video (e.g., silent video or processing error)."
+                        }
+                    }
+                },
+                "expression": {
+                    "and": [
+                        {
+                            "greater": [
+                                "@length(trim(variables('vTranscriptText')))",
+                                0
+                            ]
+                        }
+                    ]
+                },
+                "type": "If",
+                "description": "Check if any transcript content was extracted. Only proceed to generate embeddings and push to search if content exists."
+            }
+        },
+        "outputs": {},
+        "parameters": {
+            "$connections": {
+                "type": "Object",
+                "defaultValue": {}
+            }
+        }
+    },
+    "parameters": {
+        "$connections": {
+            "type": "Object",
+            "value": {
+                "azureeventgrid-1": {
+                    "id": "/subscriptions/<your-subscription-id>/providers/Microsoft.Web/locations/<your-region>/managedApis/azureeventgrid",
+                    "connectionId": "/subscriptions/<your-subscription-id>/resourceGroups/<your-resource-group>/providers/Microsoft.Web/connections/azureeventgrid-1",
+                    "connectionName": "azureeventgrid-1",
+                    "connectionProperties": {}
+                }
+            }
+        }
+    }
+}
