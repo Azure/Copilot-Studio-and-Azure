@@ -45,6 +45,14 @@ Copilot Studio empowered by Azure is recommended in scenarios when:
 - Deep expertise is required on demand with grounded, cited responses.
 - Complex scenarios require both quick lookups and comprehensive analysis (hybrid responses).
 
+# Solutions Accelerators
+
+By leveraging the [Solution Accelerators](docs/Solution-Accelerators.md), we can expand core functionality. In this document, we outline how each accelerator integrates with and enhances Copilot Studio to support these goals:
+
+- Pairing Copilot Studio with [Content Flow](https://github.com/Azure/contentflow) enables high‑accuracy RAG by automating large‑scale document ingestion, intelligent chunking, and multimodal retrieval for enterprise scenarios.
+- [AISearch Flow](/accelerators/aisearch/) enables users to interact with Azure AI Search through a manual button trigger, supporting three main operations: creating an index, uploading documents, and performing semantic search queries.
+- The [Video RAG Accelerator](/accelerators/Video-RAG/) enables intelligent question-and-answer over training videos by automatically extracting video content, transforming it into structured knowledge, and grounding responses in Azure AI Search for use in Copilot Studio.
+
 # Learning Path
 **Lab 0: Prerequisites**
 - [Lab 0.0](labs/0.0-create-an-agent/0.0-create-an-agent.md): Create an agent for testing and monitoring.
@@ -64,9 +72,8 @@ Copilot Studio empowered by Azure is recommended in scenarios when:
 - [Lab 2.3](labs/2.3-ai-search-sharepoint-indexer/2.3-ai-search-sharepoint-indexer.md): AI search Sharepoint Indexer.
 - [Lab 2.4](labs/2.4-microsoft-foundry-agentic-retrieval/README.md): Microsoft Foundry Agentic Retrieval with Foundry IQ.
 
-**Combine accelerators**
+**Best Practices**
 - [Best Practices](docs/Best-Practices_decision-tree_for_building_copilot_studio_agent.md): Decision tree and best practices to build an agent. 
-- [Solution Accelerators](docs/Solution-Accelerators.md): Use Copilot Studio with other accelerators.
 
   
 # Usage scenarios
