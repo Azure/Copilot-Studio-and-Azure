@@ -1,14 +1,14 @@
 # Copilot Studio Empowered by Azure
 
-This solution empowers organisations to rapidly build and deploy intelligent copilots using a low-code platform integrated with Azure AI. Enabling Fusion Teams, IT Leaders, and Solution Architects with Copilot Studio and Azure—building secure, scalable, and task-specific AI workflows for enterprise innovation. This repository provides a clear and practical guide to implementing Copilot Studio with Azure, featuring real-world examples and actionable insights on when and how this combination delivers value.
+This solution empowers organisations to rapidly build and deploy intelligent copilots using a low-code platform integrated with Azure AI. Enabling Fusion Teams, IT Leaders, and Solution Architects with Copilot Studio and Azure building secure, scalable, and task specific AI workflows for enterprise innovation. This repository provides a clear and practical guide to implementing Copilot Studio with Azure, featuring real-world examples and actionable insights on when and how this combination delivers value.
 
-The repository also showcases the convergence of Microsoft's most advanced AI technologies—**Microsoft Foundry**, **Foundry IQ**, and **Copilot Studio**—working in harmony to create intelligent, knowledge-grounded agents that transform how enterprises work.
+The repository also showcases the convergence of Microsoft's most advanced AI technologies **Microsoft Foundry**, **Foundry IQ**, and **Copilot Studio** working in harmony to create intelligent, knowledge-grounded agents that transform how enterprises work.
 
 # What
 
 Copilot Studio is a graphical, low-code tool for building agents and agent flows, whose capabilities can be further enhanced by leveraging the full potential of Azure AI.
 
-**Foundry IQ** is Microsoft's breakthrough unified knowledge layer that transforms how AI agents access and reason over enterprise data. It's not just RAG—it's intelligent, multi-source knowledge retrieval that understands context and intent. Key capabilities include:
+**Foundry IQ** is Microsoft's breakthrough unified knowledge layer that transforms how AI agents access and reason over enterprise data. It's not just RAG, it's intelligent, multi-source knowledge retrieval that understands context and intent. Key capabilities include:
 - **Agentic Retrieval**: The AI plans its search strategy, queries multiple sources, and synthesizes coherent responses
 - **Multi-Source Knowledge Bases**: Combine multiple data sources in one queryable layer
 - **Enterprise Security**: Document-level permissions, audit trails, and compliance
