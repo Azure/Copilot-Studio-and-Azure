@@ -1,6 +1,6 @@
 # Copilot Studio Empowered by Azure
 
-This solution empowers organisations to rapidly build and deploy intelligent copilots using a low-code platform integrated with Azure AI. Enabling Fusion Teams, IT Leaders, and Solution Architects with Copilot Studio and Azure building secure, scalable, and task specific AI workflows for enterprise innovation. This repository provides a clear and practical guide to implementing Copilot Studio with Azure, featuring real-world examples and actionable insights on when and how this combination delivers value.
+This solution empowers organizations to rapidly build and deploy intelligent copilots using a low-code platform integrated with Azure AI. Enabling Fusion Teams, IT Leaders, and Solution Architects with Copilot Studio and Azure building secure, scalable, and task specific AI workflows for enterprise innovation. This repository provides a clear and practical guide to implementing Copilot Studio with Azure, featuring real-world examples and actionable insights on when and how this combination delivers value.
 
 The repository also showcases the convergence of Microsoft's most advanced AI technologies **Microsoft Foundry**, **Foundry IQ**, and **Copilot Studio** working in harmony to create intelligent, knowledge-grounded agents that transform how enterprises work.
 
