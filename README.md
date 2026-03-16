@@ -61,7 +61,7 @@ By leveraging the [Solution Accelerators](docs/Solution-Accelerators.md), we can
 # Project Kickoff
 
 - [Best Practices](docs/Best-Practices_decision-tree_for_building_copilot_studio_agent.md): Decision tree and best practices to build an agent.
-- [Funtional Scoping](docs/Funtional-Scoping.md): Essential project template with AI‑guided prompts and an AI‑empowered scoping agent to accelerate fast, consistent technical scoping.
+- [Functional Scoping](docs/Funtional-Scoping.md): Essential project template with AI‑guided prompts and an AI‑empowered scoping agent to accelerate fast, consistent technical scoping.
 
 # Learning Path
 **Lab 0: Prerequisites**
@@ -75,6 +75,7 @@ By leveraging the [Solution Accelerators](docs/Solution-Accelerators.md), we can
 - [Lab 1.4](labs/1.4-ai-search/1.4-ai-search.md): Use Azure AI Search in Copilot Studio.
 - [Lab 1.5](labs/1.5-custom-models/1.5-custom-models.md): Use custom models in Copilot Studio.
 - [Lab 1.6](labs/1.6-application-lifecycle-management): ALM with Copilot Studio.
+- [Lab 1.7](labs/1.7-monitoring/1.7.1-monitor-agent-with-application-insights.md): Monitor agent with Azure Application Insights.
 
 **Lab 2: Copilot Studio integration with Azure AI**
 - [Lab 2.1](labs/2.1-ai-search-advanced/2.1-ai-search-advanced.md): Use advance Azure AI Search.
