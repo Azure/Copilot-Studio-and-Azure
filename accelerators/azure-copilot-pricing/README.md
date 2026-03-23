@@ -2,6 +2,11 @@
 
 This Accelerator show how to use skills that enables GitHub Copilot to fetch real-time Azure retail pricing and estimate Copilot Studio agent credit consumption directly inside your editor.
 
+<span style="color:red"><strong>
+PLEASE NOTE: This is an indicative estimate only. It does not represent actual consumption. The figures are provided solely to give you a reference point and help you better understand the potential cost.
+</strong></span>
+
+
 ## What It Does
 
 - **Azure Pricing Lookups**: Queries the public [Azure Retail Prices API](https://prices.azure.com) to return live pricing for any Azure service, SKU, and region.
