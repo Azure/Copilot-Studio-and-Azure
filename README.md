@@ -63,7 +63,7 @@ By leveraging the [Solution Accelerators](docs/Solution-Accelerators.md), we can
 
 - [Best Practices](docs/Best-Practices_decision-tree_for_building_copilot_studio_agent.md): Decision tree and best practices to build an agent.
 - [Functional Scoping](docs/Funtional-Scoping.md): Essential project template with AI‑guided prompts and an AI‑empowered scoping agent to accelerate fast, consistent technical scoping.
-- [Project Requirement](docs/project-requirement.md): This guide establishes the commercial, security, platform, and governance readiness required for teams to safely and efficiently design, deploy, and operate Copilot Studio agents integrated with Azure AI Foundry.
+- [Project Requirement](docs/Project-Requirement.md): This guide establishes the commercial, security, platform, and governance readiness required for teams to safely and efficiently design, deploy, and operate Copilot Studio agents integrated with Azure AI Foundry.
 
 # Learning Path
 **Lab 0: Prerequisites**
