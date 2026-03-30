@@ -1,0 +1,124 @@
+@import 'tailwindcss';
+@import "tw-animate-css";
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  
+  body {
+    font-family: var(--font-sans), ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, 'Noto Sans', sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji';
+    @apply antialiased;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+  
+  html {
+    scroll-behavior: smooth;
+  }
+}
+
+:root {
+  --background: oklch(1.00 0 0);
+  --foreground: oklch(0.09 0.005 286);
+  
+  --card: oklch(1.00 0 0);
+  --card-foreground: oklch(0.09 0.005 286);
+  
+  --popover: oklch(1.00 0 0);
+  --popover-foreground: oklch(0.09 0.005 286);
+  
+  --primary: oklch(0.09 0.005 286);
+  --primary-foreground: oklch(0.98 0.002 286);
+  
+  --secondary: oklch(0.96 0.015 286);
+  --secondary-foreground: oklch(0.09 0.005 286);
+  
+  --muted: oklch(0.96 0.015 286);
+  --muted-foreground: oklch(0.45 0.006 286);
+  
+  --accent: oklch(54.6% 0.245 262.881);
+  --accent-foreground: oklch(0.09 0.005 286);
+  
+  --destructive: oklch(0.628 0.258 29);
+  --destructive-foreground: oklch(0.98 0.013 17);
+  
+  --border: oklch(0.898 0.013 286);
+  --input: oklch(0.898 0.013 286);
+  --ring: oklch(0.09 0.005 286);
+  
+  --radius: 0.5rem;
+  
+  --chart-1: oklch(0.647 0.199 231);
+  
+  --chart-2: oklch(0.549 0.207 267);
+  
+  --chart-3: oklch(0.716 0.182 70);
+  
+  --chart-4: oklch(0.906 0.191 77);
+  
+  --chart-5: oklch(0.735 0.188 33);
+  
+  --sidebar: oklch(0.98 0.002 286);
+  
+  --sidebar-foreground: oklch(0.534 0.015 286);
+  
+  --sidebar-primary: oklch(0.09 0.005 286);
+  
+  --sidebar-primary-foreground: oklch(0.98 0.002 286);
+  
+  --sidebar-accent: oklch(0.96 0.013 286);
+  
+  --sidebar-accent-foreground: oklch(0.09 0.005 286);
+  
+  --sidebar-border: oklch(0.898 0.013 286);
+  
+  --sidebar-ring: oklch(0.09 0.005 286);
+  
+  --shadow-color: oklch(0.09 0.005 286);
+  
+  --shadow-opacity: 0.04;
+  
+  --shadow-blur: 20px;
+  
+  --shadow-spread: 0px;
+  
+  --shadow-offset-x: 0px;
+  
+  --shadow-offset-y: 4px;
+  
+  --font-sans: Inter;
+  
+  --font-serif: PT Serif;
+  
+  --font-mono: Roboto Mono;
+}
+
+@theme {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  
+  --radius-sm: calc(var(--radius) * 0.5);
+  --radius-md: var(--radius);
+  --radius-lg: calc(var(--radius) * 1.5);
+  --radius-xl: calc(var(--radius) * 2);
+  --radius-2xl: calc(var(--radius) * 3);
+  --radius-full: 9999px;
+}
