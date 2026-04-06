@@ -6,8 +6,6 @@ import sparkPlugin from "@github/spark/spark-vite-plugin";
 import createIconImportProxy from "@github/spark/vitePhosphorIconProxyPlugin";
 import { resolve } from 'path'
 
-const projectRoot = process.env.PROJECT_ROOT || import.meta.dirname
-
 // https://vite.dev/config/
 export default defineConfig({
   base: '/Copilot-Studio-and-Azure/',
@@ -20,7 +18,7 @@ export default defineConfig({
   ],
   resolve: {
     alias: {
-      '@': resolve(projectRoot, 'src')
+      '@': resolve(import.meta.dirname, '.')
     }
   },
 });

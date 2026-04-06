@@ -23,11 +23,11 @@
     "noUncheckedSideEffectImports": true,
     "paths": {
       "@/*": [
-        "./src/*"
+        "./*"
       ]
     },
   },
   "include": [
-    "src"
+    "."
   ]
 }
