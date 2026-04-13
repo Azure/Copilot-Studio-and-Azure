@@ -108,7 +108,7 @@ openpyxl==3.1.5
     # via sharepoint-connector
 pcodedmp==1.2.6
     # via oletools
-pillow==12.1.1
+pillow==12.2.0
     # via python-pptx
 pycparser==3.0 ; implementation_name != 'PyPy' and platform_python_implementation != 'PyPy'
     # via cffi
