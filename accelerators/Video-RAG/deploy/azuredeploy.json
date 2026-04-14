@@ -60,6 +60,9 @@
     "openAiName": "[concat(parameters('resourcePrefix'), '-openai-', take(variables('uniqueSuffix'), 6))]",
     "searchServiceName": "[concat(parameters('resourcePrefix'), '-search-', take(variables('uniqueSuffix'), 6))]",
     "logicAppName": "[concat(parameters('resourcePrefix'), '-automation')]",
+    "keyVaultName": "[concat(parameters('resourcePrefix'), '-kv-', take(variables('uniqueSuffix'), 6))]",
+    "foundryHubName": "[concat(parameters('resourcePrefix'), '-hub-', take(variables('uniqueSuffix'), 6))]",
+    "foundryProjectName": "[concat(parameters('resourcePrefix'), '-proj-default')]",
     "eventGridConnectionName": "azureeventgrid-1",
     "containerName": "uploadedvideocontent",
     "searchIndexName": "video-training-index",
@@ -165,6 +168,86 @@
           "name": "text-embedding-3-large",
           "version": "[variables('embeddingModelVersion')]"
         }
+      }
+    },
+    {
+      "type": "Microsoft.KeyVault/vaults",
+      "apiVersion": "2023-07-01",
+      "name": "[variables('keyVaultName')]",
+      "location": "[parameters('location')]",
+      "properties": {
+        "tenantId": "[subscription().tenantId]",
+        "sku": {
+          "family": "A",
+          "name": "standard"
+        },
+        "accessPolicies": [],
+        "enableSoftDelete": true,
+        "enableRbacAuthorization": true
+      }
+    },
+    {
+      "type": "Microsoft.MachineLearningServices/workspaces",
+      "apiVersion": "2024-10-01",
+      "name": "[variables('foundryHubName')]",
+      "location": "[parameters('location')]",
+      "kind": "Hub",
+      "sku": {
+        "name": "Basic",
+        "tier": "Basic"
+      },
+      "identity": {
+        "type": "SystemAssigned"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Storage/storageAccounts', variables('storageAccountName'))]",
+        "[resourceId('Microsoft.KeyVault/vaults', variables('keyVaultName'))]",
+        "[resourceId('Microsoft.CognitiveServices/accounts', variables('aiServicesName'))]"
+      ],
+      "properties": {
+        "friendlyName": "[variables('foundryHubName')]",
+        "storageAccount": "[resourceId('Microsoft.Storage/storageAccounts', variables('storageAccountName'))]",
+        "keyVault": "[resourceId('Microsoft.KeyVault/vaults', variables('keyVaultName'))]"
+      }
+    },
+    {
+      "type": "Microsoft.MachineLearningServices/workspaces/connections",
+      "apiVersion": "2024-10-01",
+      "name": "[concat(variables('foundryHubName'), '/', variables('aiServicesName'), '-connection')]",
+      "dependsOn": [
+        "[resourceId('Microsoft.MachineLearningServices/workspaces', variables('foundryHubName'))]",
+        "[resourceId('Microsoft.CognitiveServices/accounts', variables('aiServicesName'))]"
+      ],
+      "properties": {
+        "category": "AIServices",
+        "authType": "AAD",
+        "isSharedToAll": true,
+        "target": "[reference(resourceId('Microsoft.CognitiveServices/accounts', variables('aiServicesName'))).endpoint]",
+        "metadata": {
+          "ApiType": "Azure",
+          "ResourceId": "[resourceId('Microsoft.CognitiveServices/accounts', variables('aiServicesName'))]"
+        }
+      }
+    },
+    {
+      "type": "Microsoft.MachineLearningServices/workspaces",
+      "apiVersion": "2024-10-01",
+      "name": "[variables('foundryProjectName')]",
+      "location": "[parameters('location')]",
+      "kind": "Project",
+      "sku": {
+        "name": "Basic",
+        "tier": "Basic"
+      },
+      "identity": {
+        "type": "SystemAssigned"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.MachineLearningServices/workspaces', variables('foundryHubName'))]"
+      ],
+      "properties": {
+        "friendlyName": "[variables('foundryProjectName')]",
+        "hubResourceId": "[resourceId('Microsoft.MachineLearningServices/workspaces', variables('foundryHubName'))]"
       }
     },
     {
@@ -1030,6 +1113,18 @@
     "logicAppManagedIdentityPrincipalId": {
       "type": "string",
       "value": "[reference(resourceId('Microsoft.Logic/workflows', variables('logicAppName')), '2019-05-01', 'Full').identity.principalId]"
+    },
+    "foundryHubName": {
+      "type": "string",
+      "value": "[variables('foundryHubName')]"
+    },
+    "foundryProjectName": {
+      "type": "string",
+      "value": "[variables('foundryProjectName')]"
+    },
+    "keyVaultName": {
+      "type": "string",
+      "value": "[variables('keyVaultName')]"
     }
   }
 }

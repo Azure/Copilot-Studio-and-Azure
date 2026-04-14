@@ -28,7 +28,7 @@ This enables your Copilot to answer questions based on video content, not just t
 
 Deploy all required Azure resources with a single click:
 
-[![Deploy to Azure](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2FAzure%2FCopilot-Studio-and-Azure%2Fmain%2Faccelerators%2FVideo-RAG%2Fdeploy%2Fazuredeploy.json)
+[![Deploy to Azure](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fgithub.com%2Fgokseloral%2FCopilot-Studio-and-Azure%2Fblob%2Fmain%2Faccelerators%2FVideo-RAG%2Fdeploy%2Fazuredeploy.json)
 
 This ARM template deploys:
 - **Storage Account** with `uploadedvideocontent` blob container
