@@ -67,11 +67,17 @@ The AI Search admin key is stored in Key Vault and retrieved by the Logic App at
 
 ### Post-Deployment Steps
 
-After the ARM template completes:
+After the ARM template completes, there is **one manual step** required to authorize the Event Grid connection:
 
-1. **Authorize the Event Grid Connection** - Navigate to the Logic App in the portal, open the designer, and re-authorize the Event Grid trigger connection if prompted.
+1. In your Resource Group, click on the **azureeventgrid-1** API Connection resource
+2. In the left menu, click **Edit API connection**
+3. Click **Authorize** and sign in with your Azure credentials
+4. Click **Save**
+5. Navigate to the **Logic App** → open the **Logic App Designer** and verify the Event Grid trigger shows as connected (no warning banner)
 
-2. **Verify Model Deployments** - Confirm that gpt-4.1, gpt-4.1-mini, and text-embedding-3-large model deployments are available in your selected region. If a model deployment failed, create it manually in the Azure AI Foundry portal.
+> **Why is this manual?** The Event Grid connector uses a V1 API connection which requires interactive OAuth consent. This is the only step that cannot be automated via ARM.
+
+Optionally, verify that gpt-4.1, gpt-4.1-mini, and text-embedding-3-large model deployments succeeded in your selected region. If a model deployment failed due to regional availability, create it manually in the Azure AI Foundry portal.
 
 > **Note:** The template restricts region selection to regions that support Azure Content Understanding. See [region support](https://learn.microsoft.com/en-us/azure/ai-services/content-understanding/language-region-support#region-support).
 
