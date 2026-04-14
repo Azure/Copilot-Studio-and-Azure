@@ -219,13 +219,11 @@
       "apiVersion": "2016-06-01",
       "name": "[variables('eventGridConnectionName')]",
       "location": "[parameters('location')]",
-      "kind": "V1",
       "properties": {
-        "displayName": "Event Grid (Managed Identity)",
+        "displayName": "Event Grid Connection",
         "api": {
           "id": "[subscriptionResourceId('Microsoft.Web/locations/managedApis', parameters('location'), 'azureeventgrid')]"
-        },
-        "parameterValueType": "Alternative"
+        }
       }
     },
     {
@@ -928,33 +926,9 @@
               "azureeventgrid-1": {
                 "id": "[subscriptionResourceId('Microsoft.Web/locations/managedApis', parameters('location'), 'azureeventgrid')]",
                 "connectionId": "[resourceId('Microsoft.Web/connections', variables('eventGridConnectionName'))]",
-                "connectionName": "[variables('eventGridConnectionName')]",
-                "connectionProperties": {
-                  "authentication": {
-                    "type": "ManagedServiceIdentity"
-                  }
-                }
+                "connectionName": "[variables('eventGridConnectionName')]"
               }
             }
-          }
-        }
-      }
-    },
-    {
-      "type": "Microsoft.Web/connections/accessPolicies",
-      "apiVersion": "2016-06-01",
-      "name": "[concat(variables('eventGridConnectionName'), '/', variables('logicAppName'))]",
-      "location": "[parameters('location')]",
-      "dependsOn": [
-        "[resourceId('Microsoft.Web/connections', variables('eventGridConnectionName'))]",
-        "[resourceId('Microsoft.Logic/workflows', variables('logicAppName'))]"
-      ],
-      "properties": {
-        "principal": {
-          "type": "ActiveDirectory",
-          "identity": {
-            "tenantId": "[subscription().tenantId]",
-            "objectId": "[reference(resourceId('Microsoft.Logic/workflows', variables('logicAppName')), '2019-05-01', 'Full').identity.principalId]"
           }
         }
       }
