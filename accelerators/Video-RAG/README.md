@@ -52,6 +52,7 @@ The Logic App and AI Services are deployed with **system-assigned managed identi
 | Role | Target Resource | Purpose |
 |------|----------------|---------|
 | Storage Blob Data Reader | Storage Account | Read uploaded video blobs |
+| Storage Account Contributor | Storage Account | Generate SAS tokens for Content Understanding blob access |
 | EventGrid EventSubscription Contributor | Storage Account | Create event subscriptions for blob triggers |
 | Cognitive Services User | Azure AI Services | Call Content Understanding APIs |
 | Cognitive Services OpenAI User | Azure OpenAI | Generate vector embeddings |
@@ -290,7 +291,16 @@ The Logic App's and AI Services' Managed Identities need access to Azure service
    - **Role:** `Cognitive Services OpenAI User`
    - **Select:** Your Logic App
 
-## 5.5 Grant Key Vault Access
+## 5.5 Grant Storage SAS Generation Access
+
+1. Navigate to Storage Account → **"Access Control (IAM)"**
+2. Add role assignment:
+   - **Role:** `Storage Account Contributor`
+   - **Select:** Your Logic App
+
+> **Why?** The Logic App generates a short-lived SAS token (1 hour) at runtime so Content Understanding can read the video blob without enabling anonymous access on the storage account.
+
+## 5.6 Grant Key Vault Access
 
 1. Navigate to Key Vault → **"Access Control (IAM)"**
 2. Add role assignment:
@@ -302,6 +312,7 @@ The Logic App's and AI Services' Managed Identities need access to Azure service
 | Identity | Resource | Role |
 |----------|----------|------|
 | Logic App | Storage Account | Storage Blob Data Reader |
+| Logic App | Storage Account | Storage Account Contributor |
 | Logic App | Storage Account | EventGrid EventSubscription Contributor |
 | Logic App | Microsoft Foundry | Cognitive Services User |
 | Logic App | Azure OpenAI | Cognitive Services OpenAI User |
@@ -325,13 +336,14 @@ The Logic App performs these steps:
 │  Blob Storage   │────▶│  Event Grid     │────▶│    Logic App         │
 │  (Video Upload) │     │  Trigger        │     │                      │
 └─────────────────┘     └─────────────────┘     │  1. Parse Event      │
-                                                │  2. Call Content     │
+                                                │  2. Generate SAS     │
+                                                │  3. Call Content     │
                                                 │     Understanding    │
-                                                │  3. Poll for Status  │
-                                                │  4. Extract Content  │
-                                                │  5. Generate Vector  │
-                                                │  6. Get Key from KV  │
-                                                │  7. Push to Search   │
+                                                │  4. Poll for Status  │
+                                                │  5. Extract Content  │
+                                                │  6. Generate Vector  │
+                                                │  7. Get Key from KV  │
+                                                │  8. Push to Search   │
                                                 └──────────────────────┘
 ```
 
@@ -393,13 +405,20 @@ The Logic App performs these steps:
 
 ## 6.4 Initialize Variables
 
-Add **Initialize variable** actions for each variable (one per action):
+Add two **Initialize variable** actions. The first initializes blob info variables together, and the second creates the document ID (kept separate because it depends on `vBlobUrl`):
+
+**Action 1: `varBlobInfo`**
 
 | Variable Name | Type | Value (Expression) |
 |---------------|------|-------------------|
 | `vBlobUrl` | String | `body('Parse_trigger_body')?['data']?['url']` |
 | `vBlobName` | String | `last(split(body('Parse_trigger_body')?['data']?['url'],'/'))` |
 | `vContainer` | String | `split(body('Parse_trigger_body')?['data']?['url'],'/')[3]` |
+
+**Action 2: `varDocumentId`** (runs after `varBlobInfo`)
+
+| Variable Name | Type | Value (Expression) |
+|---------------|------|-------------------|
 | `vDocumentId` | String | `base64(variables('vBlobUrl'))` |
 
 ![Initialize Variables](images-samples/blob-info.jpg)
@@ -434,7 +453,30 @@ Add **Initialize variable** actions for each variable (one per action):
 
 3. Rename to `Set_defaults`
 
-## 6.6 Add HTTP Action (Call Content Understanding)
+## 6.6 Add HTTP Action (Generate SAS Token)
+
+1. Add **HTTP** action
+2. Configure:
+   - **Method:** `POST`
+   - **URI:** `https://management.azure.com/subscriptions/<your-subscription-id>/resourceGroups/<your-resource-group>/providers/Microsoft.Storage/storageAccounts/<your-storage-account>/ListServiceSas?api-version=2023-05-01`
+   - **Body:**
+```json
+{
+    "canonicalizedResource": "/blob/<your-storage-account>/uploadedvideocontent",
+    "signedResource": "c",
+    "signedPermission": "r",
+    "signedProtocol": "https",
+    "signedExpiry": "@{addHours(utcNow(), 1)}"
+}
+```
+   - **Authentication:** System-assigned Managed Identity
+   - **Audience:** `https://management.azure.com`
+3. Enable **Secure Outputs** in settings to hide the SAS token from run history
+4. Rename to `Generate_SAS_Token`
+
+> **Why SAS?** The storage account blocks anonymous access. This step generates a read-only, 1-hour SAS token so Content Understanding can securely access the video blob.
+
+## 6.7 Add HTTP Action (Call Content Understanding)
 
 1. Add **HTTP** action
 2. Configure:
@@ -446,7 +488,7 @@ Add **Initialize variable** actions for each variable (one per action):
 {
     "inputs": [
         {
-            "url": "@{variables('vBlobUrl')}"
+            "url": "@{variables('vBlobUrl')}?@{body('Generate_SAS_Token')?['serviceSasToken']}"
         }
     ]
 }
@@ -458,7 +500,7 @@ Add **Initialize variable** actions for each variable (one per action):
 
 3. Rename to `Call_Content_Understanding`
 
-## 6.7 Parse CU Body
+## 6.8 Parse CU Body
 
 1. Click **"+ New step"** → Search **"Parse JSON"**
 2. Configure:
@@ -485,21 +527,14 @@ Add **Initialize variable** actions for each variable (one per action):
 }
 ```
 
-## 6.8 Capture Operation Location
+## 6.9 Initialize Polling Variables
 
-1. Add **Initialize variable** action
-2. Configure:
-   - **Name:** `vOperationLocation`
-   - **Type:** String
-   - **Value:** Expression: `outputs('Call_Content_Understanding')?['headers']?['Operation-Location']`
+Add a single **Initialize variable** action with both variables:
 
-## 6.9 Capture Analyzer Status
-
-1. Add **Initialize variable** action
-2. Configure:
-   - **Name:** `vAnalyzerStatus`
-   - **Type:** String
-   - **Value:** `notStarted`
+| Variable Name | Type | Value (Expression) |
+|---------------|------|-------------------|
+| `vOperationLocation` | String | `outputs('Call_Content_Understanding')?['headers']?['Operation-Location']` |
+| `vAnalyzerStatus` | String | `notStarted` |
 
 ## 6.10 Add Polling Loop (Until)
 
@@ -556,7 +591,7 @@ Add **Initialize variable** actions for each variable (one per action):
 
 ## 6.13 Initialize Transcript and Summary Variables
 
-Add two **Initialize variable** actions:
+Add a single **Initialize variable** action with both variables:
 
 | Variable Name | Type | Value |
 |---------------|------|-------|
@@ -646,7 +681,7 @@ Add two **Initialize variable** actions:
 
 Add **Terminate** with Failed status: `No transcript content extracted`
 
-## 6.16 Save the Logic App
+## 6.17 Save the Logic App
 
 Click **"Save"** in the toolbar.
 

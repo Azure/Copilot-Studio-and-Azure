@@ -73,6 +73,7 @@
     "cognitiveServicesUserRoleId": "a97b65f3-24c7-4388-baec-2e87135dc908",
     "cognitiveServicesOpenAIUserRoleId": "5e0bd9bd-7b93-4f28-af87-19fc36ad61bd",
     "keyVaultSecretsUserRoleId": "4633458b-17de-408a-b874-0445c86b69e6",
+    "storageAccountContributorRoleId": "17d1049b-9a84-46fb-8f53-869881c3d3ab",
     "searchAdminKeySecretName": "search-admin-key"
   },
   "resources": [
@@ -88,7 +89,7 @@
       "properties": {
         "supportsHttpsTrafficOnly": true,
         "minimumTlsVersion": "TLS1_2",
-        "allowBlobPublicAccess": true
+        "allowBlobPublicAccess": false
       }
     },
     {
@@ -97,10 +98,7 @@
       "name": "[concat(variables('storageAccountName'), '/default/', variables('containerName'))]",
       "dependsOn": [
         "[resourceId('Microsoft.Storage/storageAccounts', variables('storageAccountName'))]"
-      ],
-      "properties": {
-        "publicAccess": "Blob"
-      }
+      ]
     },
     {
       "type": "Microsoft.CognitiveServices/accounts",
@@ -469,7 +467,7 @@
               },
               "description": "Parse the Event Grid trigger payload to extract blob information."
             },
-            "varBlobUrl": {
+            "varBlobInfo": {
               "runAfter": {
                 "Parse_trigger_body": [ "Succeeded" ]
               },
@@ -480,34 +478,12 @@
                     "name": "vBlobUrl",
                     "type": "string",
                     "value": "@{body('Parse_trigger_body')?['data']?['url']}"
-                  }
-                ]
-              },
-              "description": "Store the full blob URL from the event data."
-            },
-            "varBlobName": {
-              "runAfter": {
-                "varBlobUrl": [ "Succeeded" ]
-              },
-              "type": "InitializeVariable",
-              "inputs": {
-                "variables": [
+                  },
                   {
                     "name": "vBlobName",
                     "type": "string",
                     "value": "@{last(split(body('Parse_trigger_body')?['data']?['url'],'/'))}"
-                  }
-                ]
-              },
-              "description": "Extract the blob filename from the URL."
-            },
-            "varContainer": {
-              "runAfter": {
-                "varBlobName": [ "Succeeded" ]
-              },
-              "type": "InitializeVariable",
-              "inputs": {
-                "variables": [
+                  },
                   {
                     "name": "vContainer",
                     "type": "string",
@@ -515,11 +491,11 @@
                   }
                 ]
               },
-              "description": "Extract the container name from the URL."
+              "description": "Initialize variables for blob URL, blob name (filename), and container name extracted from the event data."
             },
             "varDocumentId": {
               "runAfter": {
-                "varContainer": [ "Succeeded" ]
+                "varBlobInfo": [ "Succeeded" ]
               },
               "type": "InitializeVariable",
               "inputs": {
@@ -567,9 +543,36 @@
                 }
               }
             },
-            "Call_Content_Understanding": {
+            "Generate_SAS_Token": {
               "runAfter": {
                 "Set_defaults": [ "Succeeded" ]
+              },
+              "type": "Http",
+              "inputs": {
+                "uri": "[concat('https://management.azure.com/subscriptions/', subscription().subscriptionId, '/resourceGroups/', resourceGroup().name, '/providers/Microsoft.Storage/storageAccounts/', variables('storageAccountName'), '/ListServiceSas?api-version=2023-05-01')]",
+                "method": "POST",
+                "body": {
+                  "canonicalizedResource": "[concat('/blob/', variables('storageAccountName'), '/', variables('containerName'))]",
+                  "signedResource": "c",
+                  "signedPermission": "r",
+                  "signedProtocol": "https",
+                  "signedExpiry": "@{addHours(utcNow(), 1)}"
+                },
+                "authentication": {
+                  "type": "ManagedServiceIdentity",
+                  "audience": "https://management.azure.com"
+                }
+              },
+              "description": "Generate a read-only SAS token (1 hour expiry) for the blob container so Content Understanding can access the video.",
+              "runtimeConfiguration": {
+                "secureData": {
+                  "properties": [ "outputs" ]
+                }
+              }
+            },
+            "Call_Content_Understanding": {
+              "runAfter": {
+                "Generate_SAS_Token": [ "Succeeded" ]
               },
               "type": "Http",
               "inputs": {
@@ -581,7 +584,7 @@
                 "body": {
                   "inputs": [
                     {
-                      "url": "@{variables('vBlobUrl')}"
+                      "url": "@{variables('vBlobUrl')}?@{body('Generate_SAS_Token')?['serviceSasToken']}"
                     }
                   ]
                 },
@@ -590,7 +593,7 @@
                   "audience": "https://cognitiveservices.azure.com"
                 }
               },
-              "description": "Start async video analysis using Content Understanding prebuilt-videoSearch analyzer.",
+              "description": "Start async video analysis using Content Understanding prebuilt-videoSearch analyzer with SAS token for blob access.",
               "runtimeConfiguration": {
                 "contentTransfer": {
                   "transferMode": "Chunked"
@@ -624,7 +627,7 @@
               },
               "description": "Parse the initial Content Understanding response."
             },
-            "varOperationLocation": {
+            "varPollingInfo": {
               "runAfter": {
                 "Parse_CU_Body": [ "Succeeded" ]
               },
@@ -635,18 +638,7 @@
                     "name": "vOperationLocation",
                     "type": "string",
                     "value": "@{outputs('Call_Content_Understanding')?['headers']?['Operation-Location']}"
-                  }
-                ]
-              },
-              "description": "Store the Operation-Location header URL for polling."
-            },
-            "varAnalyzerStatus": {
-              "runAfter": {
-                "varOperationLocation": [ "Succeeded" ]
-              },
-              "type": "InitializeVariable",
-              "inputs": {
-                "variables": [
+                  },
                   {
                     "name": "vAnalyzerStatus",
                     "type": "string",
@@ -654,7 +646,7 @@
                   }
                 ]
               },
-              "description": "Initialize status tracking variable."
+              "description": "Store the Operation-Location header URL for polling and initialize status tracking variable."
             },
             "Until_succeeded": {
               "actions": {
@@ -728,7 +720,7 @@
                 }
               },
               "runAfter": {
-                "varAnalyzerStatus": [ "Succeeded" ]
+                "varPollingInfo": [ "Succeeded" ]
               },
               "expression": "@or(equals(variables('vAnalyzerStatus'), 'succeeded'), equals(variables('vAnalyzerStatus'), 'failed'))",
               "limit": {
@@ -871,7 +863,7 @@
               },
               "description": "Parse the final Content Understanding result with full schema."
             },
-            "varTranscriptText": {
+            "varContentText": {
               "runAfter": {
                 "Parse_Call_Result_JSON": [ "Succeeded" ]
               },
@@ -882,18 +874,7 @@
                     "name": "vTranscriptText",
                     "type": "string",
                     "value": ""
-                  }
-                ]
-              },
-              "description": "Initialize variable to accumulate transcript text."
-            },
-            "varSummaryText": {
-              "runAfter": {
-                "varTranscriptText": [ "Succeeded" ]
-              },
-              "type": "InitializeVariable",
-              "inputs": {
-                "variables": [
+                  },
                   {
                     "name": "vSummaryText",
                     "type": "string",
@@ -901,7 +882,7 @@
                   }
                 ]
               },
-              "description": "Initialize variable to accumulate summary text."
+              "description": "Initialize variables to accumulate transcript and summary text from video segments."
             },
             "For_each_content": {
               "foreach": "@body('Parse_Call_Result_JSON')?['result']?['contents']",
@@ -938,7 +919,7 @@
                 }
               },
               "runAfter": {
-                "varSummaryText": [ "Succeeded" ]
+                "varContentText": [ "Succeeded" ]
               },
               "type": "Foreach",
               "description": "Iterate through each content segment to extract transcripts and summaries."
@@ -1133,6 +1114,20 @@
       ],
       "properties": {
         "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', variables('eventGridContributorRoleId'))]",
+        "principalId": "[reference(resourceId('Microsoft.Logic/workflows', variables('logicAppName')), '2019-05-01', 'Full').identity.principalId]",
+        "principalType": "ServicePrincipal"
+      }
+    },
+    {
+      "type": "Microsoft.Storage/storageAccounts/providers/roleAssignments",
+      "apiVersion": "2022-04-01",
+      "name": "[concat(variables('storageAccountName'), '/Microsoft.Authorization/', guid(resourceGroup().id, variables('storageAccountContributorRoleId'), variables('logicAppName')))]",
+      "dependsOn": [
+        "[resourceId('Microsoft.Storage/storageAccounts', variables('storageAccountName'))]",
+        "[resourceId('Microsoft.Logic/workflows', variables('logicAppName'))]"
+      ],
+      "properties": {
+        "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', variables('storageAccountContributorRoleId'))]",
         "principalId": "[reference(resourceId('Microsoft.Logic/workflows', variables('logicAppName')), '2019-05-01', 'Full').identity.principalId]",
         "principalType": "ServicePrincipal"
       }
