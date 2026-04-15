@@ -88,7 +88,7 @@
       "properties": {
         "supportsHttpsTrafficOnly": true,
         "minimumTlsVersion": "TLS1_2",
-        "allowBlobPublicAccess": false
+        "allowBlobPublicAccess": true
       }
     },
     {
@@ -97,7 +97,10 @@
       "name": "[concat(variables('storageAccountName'), '/default/', variables('containerName'))]",
       "dependsOn": [
         "[resourceId('Microsoft.Storage/storageAccounts', variables('storageAccountName'))]"
-      ]
+      ],
+      "properties": {
+        "publicAccess": "Blob"
+      }
     },
     {
       "type": "Microsoft.CognitiveServices/accounts",
@@ -108,6 +111,9 @@
         "name": "S0"
       },
       "kind": "AIServices",
+      "identity": {
+        "type": "SystemAssigned"
+      },
       "properties": {
         "publicNetworkAccess": "Enabled",
         "customSubDomainName": "[variables('aiServicesName')]"
@@ -1100,6 +1106,20 @@
       "properties": {
         "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', variables('storageBlobDataReaderRoleId'))]",
         "principalId": "[reference(resourceId('Microsoft.Logic/workflows', variables('logicAppName')), '2019-05-01', 'Full').identity.principalId]",
+        "principalType": "ServicePrincipal"
+      }
+    },
+    {
+      "type": "Microsoft.Storage/storageAccounts/providers/roleAssignments",
+      "apiVersion": "2022-04-01",
+      "name": "[concat(variables('storageAccountName'), '/Microsoft.Authorization/', guid(resourceGroup().id, variables('storageBlobDataReaderRoleId'), variables('aiServicesName')))]",
+      "dependsOn": [
+        "[resourceId('Microsoft.Storage/storageAccounts', variables('storageAccountName'))]",
+        "[resourceId('Microsoft.CognitiveServices/accounts', variables('aiServicesName'))]"
+      ],
+      "properties": {
+        "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', variables('storageBlobDataReaderRoleId'))]",
+        "principalId": "[reference(resourceId('Microsoft.CognitiveServices/accounts', variables('aiServicesName')), '2024-10-01', 'Full').identity.principalId]",
         "principalType": "ServicePrincipal"
       }
     },

@@ -45,7 +45,9 @@ Deploy all required Azure resources with a single click:
 
 ### Security & Managed Identity
 
-The Logic App is deployed with a **system-assigned managed identity**. All RBAC role assignments are configured automatically:
+The Logic App and AI Services are deployed with **system-assigned managed identities**. All RBAC role assignments are configured automatically:
+
+**Logic App Managed Identity:**
 
 | Role | Target Resource | Purpose |
 |------|----------------|---------|
@@ -54,6 +56,12 @@ The Logic App is deployed with a **system-assigned managed identity**. All RBAC 
 | Cognitive Services User | Azure AI Services | Call Content Understanding APIs |
 | Cognitive Services OpenAI User | Azure OpenAI | Generate vector embeddings |
 | Key Vault Secrets User | Azure Key Vault | Retrieve AI Search admin key at runtime |
+
+**AI Services Managed Identity:**
+
+| Role | Target Resource | Purpose |
+|------|----------------|---------|
+| Storage Blob Data Reader | Storage Account | Allow Content Understanding to read video files from blob storage |
 
 The AI Search admin key is stored in Key Vault and retrieved by the Logic App at runtime using managed identity, so no secrets are embedded in the workflow definition.
 
