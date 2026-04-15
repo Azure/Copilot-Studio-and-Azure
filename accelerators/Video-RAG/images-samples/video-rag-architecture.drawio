@@ -1,0 +1,160 @@
+<mxfile host="app.diagrams.net" modified="2026-04-15T00:00:00.000Z" agent="Claude Code" version="24.0.0" type="device">
+  <diagram id="video-rag-arch" name="Video RAG Architecture">
+    <mxGraphModel dx="1422" dy="794" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1600" pageHeight="900" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <!-- Title -->
+        <mxCell id="title" value="Video RAG Accelerator — Architecture" style="text;html=1;fontSize=22;fontStyle=1;align=center;verticalAlign=middle;whiteSpace=wrap;fillColor=none;strokeColor=none;fontColor=#333333;" vertex="1" parent="1">
+          <mxGeometry x="450" y="20" width="500" height="40" as="geometry" />
+        </mxCell>
+
+        <!-- User -->
+        <mxCell id="user" value="User" style="shape=mxgraph.azure.user;fillColor=#0078D4;fontColor=#FFFFFF;strokeColor=none;fontSize=12;fontStyle=1;verticalLabelPosition=bottom;verticalAlign=top;align=center;" vertex="1" parent="1">
+          <mxGeometry x="80" y="160" width="50" height="50" as="geometry" />
+        </mxCell>
+
+        <!-- Storage Account -->
+        <mxCell id="storage" value="Azure Storage Account&#xa;(Blob Container:&#xa;uploadedvideocontent)" style="shape=mxgraph.azure.storage;fillColor=#0078D4;fontColor=#FFFFFF;strokeColor=none;fontSize=11;fontStyle=1;rounded=1;arcSize=10;whiteSpace=wrap;verticalAlign=middle;align=center;" vertex="1" parent="1">
+          <mxGeometry x="230" y="140" width="180" height="90" as="geometry" />
+        </mxCell>
+
+        <!-- Event Grid -->
+        <mxCell id="eventgrid" value="Azure Event Grid&#xa;(BlobCreated Trigger)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#5C2D91;fontColor=#FFFFFF;strokeColor=none;fontSize=11;fontStyle=1;arcSize=20;verticalAlign=middle;align=center;" vertex="1" parent="1">
+          <mxGeometry x="500" y="150" width="170" height="70" as="geometry" />
+        </mxCell>
+
+        <!-- Logic App (central orchestrator) -->
+        <mxCell id="logicapp" value="Azure Logic App&#xa;(Workflow Orchestrator)&#xa;&#xa;System-Assigned&#xa;Managed Identity" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#0078D4;fontColor=#FFFFFF;strokeColor=#005A9E;strokeWidth=3;fontSize=12;fontStyle=1;arcSize=10;verticalAlign=middle;align=center;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="760" y="120" width="200" height="130" as="geometry" />
+        </mxCell>
+
+        <!-- Microsoft Foundry -->
+        <mxCell id="foundry" value="Microsoft Foundry&#xa;(Content Understanding)&#xa;&#xa;gpt-4.1 | gpt-4.1-mini&#xa;text-embedding-3-large" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#008272;fontColor=#FFFFFF;strokeColor=none;fontSize=11;fontStyle=1;arcSize=10;verticalAlign=middle;align=center;" vertex="1" parent="1">
+          <mxGeometry x="1080" y="80" width="200" height="100" as="geometry" />
+        </mxCell>
+
+        <!-- Azure OpenAI -->
+        <mxCell id="openai" value="Azure OpenAI&#xa;&#xa;text-embedding-3-large&#xa;(Vector Embeddings)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FF8C00;fontColor=#FFFFFF;strokeColor=none;fontSize=11;fontStyle=1;arcSize=10;verticalAlign=middle;align=center;" vertex="1" parent="1">
+          <mxGeometry x="1080" y="210" width="200" height="90" as="geometry" />
+        </mxCell>
+
+        <!-- Azure Key Vault -->
+        <mxCell id="keyvault" value="Azure Key Vault&#xa;&#xa;(Search Admin Key)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E81123;fontColor=#FFFFFF;strokeColor=none;fontSize=11;fontStyle=1;arcSize=10;verticalAlign=middle;align=center;" vertex="1" parent="1">
+          <mxGeometry x="1080" y="330" width="200" height="70" as="geometry" />
+        </mxCell>
+
+        <!-- AI Search -->
+        <mxCell id="aisearch" value="Azure AI Search&#xa;&#xa;video-training-index&#xa;(HNSW Vector + Semantic)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#0063B1;fontColor=#FFFFFF;strokeColor=none;fontSize=11;fontStyle=1;arcSize=10;verticalAlign=middle;align=center;" vertex="1" parent="1">
+          <mxGeometry x="760" y="430" width="200" height="100" as="geometry" />
+        </mxCell>
+
+        <!-- Copilot Studio -->
+        <mxCell id="copilot" value="Microsoft&#xa;Copilot Studio&#xa;&#xa;(Agent + Knowledge Base)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#742774;fontColor=#FFFFFF;strokeColor=none;fontSize=12;fontStyle=1;arcSize=10;verticalAlign=middle;align=center;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="400" y="430" width="200" height="100" as="geometry" />
+        </mxCell>
+
+        <!-- End User -->
+        <mxCell id="enduser" value="End User" style="shape=mxgraph.azure.user;fillColor=#742774;fontColor=#FFFFFF;strokeColor=none;fontSize=12;fontStyle=1;verticalLabelPosition=bottom;verticalAlign=top;align=center;" vertex="1" parent="1">
+          <mxGeometry x="130" y="455" width="50" height="50" as="geometry" />
+        </mxCell>
+
+        <!-- Arrows -->
+        <!-- User uploads video -->
+        <mxCell id="e1" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;exitX=1;exitY=0.5;entryX=0;entryY=0.5;strokeColor=#333333;strokeWidth=2;fontSize=10;fontColor=#333333;" edge="1" source="user" target="storage" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e1label" value="1. Upload Video" style="edgeLabel;html=1;align=center;verticalAlign=bottom;fontSize=10;fontColor=#333333;fontStyle=1;" vertex="1" connectable="0" parent="e1">
+          <mxGeometry x="-0.1" relative="1" as="geometry"><mxPoint y="-10" as="offset" /></mxGeometry>
+        </mxCell>
+
+        <!-- Storage triggers Event Grid -->
+        <mxCell id="e2" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;exitX=1;exitY=0.5;entryX=0;entryY=0.5;strokeColor=#5C2D91;strokeWidth=2;dashed=1;" edge="1" source="storage" target="eventgrid" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e2label" value="2. BlobCreated Event" style="edgeLabel;html=1;align=center;verticalAlign=bottom;fontSize=10;fontColor=#5C2D91;fontStyle=1;" vertex="1" connectable="0" parent="e2">
+          <mxGeometry x="-0.1" relative="1" as="geometry"><mxPoint y="-10" as="offset" /></mxGeometry>
+        </mxCell>
+
+        <!-- Event Grid triggers Logic App -->
+        <mxCell id="e3" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;exitX=1;exitY=0.5;entryX=0;entryY=0.3;strokeColor=#5C2D91;strokeWidth=2;dashed=1;" edge="1" source="eventgrid" target="logicapp" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e3label" value="3. Trigger Workflow" style="edgeLabel;html=1;align=center;verticalAlign=bottom;fontSize=10;fontColor=#5C2D91;fontStyle=1;" vertex="1" connectable="0" parent="e3">
+          <mxGeometry x="-0.1" relative="1" as="geometry"><mxPoint y="-10" as="offset" /></mxGeometry>
+        </mxCell>
+
+        <!-- Logic App generates SAS and calls Foundry -->
+        <mxCell id="e4" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;exitX=1;exitY=0.25;entryX=0;entryY=0.5;strokeColor=#008272;strokeWidth=2;" edge="1" source="logicapp" target="foundry" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e4label" value="4. Analyze Video&#xa;(SAS Token + URL)" style="edgeLabel;html=1;align=center;verticalAlign=middle;fontSize=10;fontColor=#008272;fontStyle=1;" vertex="1" connectable="0" parent="e4">
+          <mxGeometry x="-0.1" relative="1" as="geometry"><mxPoint y="-5" as="offset" /></mxGeometry>
+        </mxCell>
+
+        <!-- Logic App calls OpenAI -->
+        <mxCell id="e5" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;exitX=1;exitY=0.6;entryX=0;entryY=0.5;strokeColor=#FF8C00;strokeWidth=2;" edge="1" source="logicapp" target="openai" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e5label" value="5. Generate Embedding" style="edgeLabel;html=1;align=center;verticalAlign=bottom;fontSize=10;fontColor=#FF8C00;fontStyle=1;" vertex="1" connectable="0" parent="e5">
+          <mxGeometry x="-0.1" relative="1" as="geometry"><mxPoint y="-10" as="offset" /></mxGeometry>
+        </mxCell>
+
+        <!-- Logic App reads Key Vault -->
+        <mxCell id="e6" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;exitX=1;exitY=0.85;entryX=0;entryY=0.5;strokeColor=#E81123;strokeWidth=2;" edge="1" source="logicapp" target="keyvault" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e6label" value="6. Get Search Key" style="edgeLabel;html=1;align=center;verticalAlign=bottom;fontSize=10;fontColor=#E81123;fontStyle=1;" vertex="1" connectable="0" parent="e6">
+          <mxGeometry x="-0.1" relative="1" as="geometry"><mxPoint y="-10" as="offset" /></mxGeometry>
+        </mxCell>
+
+        <!-- Logic App pushes to AI Search -->
+        <mxCell id="e7" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;exitX=0.5;exitY=1;entryX=0.5;entryY=0;strokeColor=#0063B1;strokeWidth=2;" edge="1" source="logicapp" target="aisearch" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e7label" value="7. Index Document&#xa;+ Vector" style="edgeLabel;html=1;align=left;verticalAlign=middle;fontSize=10;fontColor=#0063B1;fontStyle=1;" vertex="1" connectable="0" parent="e7">
+          <mxGeometry x="-0.1" relative="1" as="geometry"><mxPoint x="10" as="offset" /></mxGeometry>
+        </mxCell>
+
+        <!-- Copilot Studio queries AI Search -->
+        <mxCell id="e8" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;exitX=1;exitY=0.5;entryX=0;entryY=0.5;strokeColor=#742774;strokeWidth=2;" edge="1" source="copilot" target="aisearch" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e8label" value="8. Query / RAG" style="edgeLabel;html=1;align=center;verticalAlign=bottom;fontSize=10;fontColor=#742774;fontStyle=1;" vertex="1" connectable="0" parent="e8">
+          <mxGeometry x="-0.1" relative="1" as="geometry"><mxPoint y="-10" as="offset" /></mxGeometry>
+        </mxCell>
+
+        <!-- End User interacts with Copilot -->
+        <mxCell id="e9" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;exitX=1;exitY=0.5;entryX=0;entryY=0.5;strokeColor=#742774;strokeWidth=2;" edge="1" source="enduser" target="copilot" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e9label" value="Ask Questions" style="edgeLabel;html=1;align=center;verticalAlign=bottom;fontSize=10;fontColor=#742774;fontStyle=1;" vertex="1" connectable="0" parent="e9">
+          <mxGeometry x="-0.1" relative="1" as="geometry"><mxPoint y="-10" as="offset" /></mxGeometry>
+        </mxCell>
+
+        <!-- Foundry reads from Storage -->
+        <mxCell id="e10" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;exitX=0.5;exitY=0;entryX=0.5;entryY=0;strokeColor=#008272;strokeWidth=1;dashed=1;" edge="1" source="foundry" target="storage" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1180" y="50" />
+              <mxPoint x="320" y="50" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e10label" value="Read Video (via SAS)" style="edgeLabel;html=1;align=center;verticalAlign=bottom;fontSize=9;fontColor=#008272;fontStyle=2;" vertex="1" connectable="0" parent="e10">
+          <mxGeometry x="-0.1" relative="1" as="geometry"><mxPoint y="-5" as="offset" /></mxGeometry>
+        </mxCell>
+
+        <!-- Swim lane labels -->
+        <mxCell id="lane1" value="Ingestion Flow" style="text;html=1;fontSize=13;fontStyle=3;align=left;verticalAlign=middle;fillColor=#E6F0FF;strokeColor=#0078D4;rounded=1;arcSize=20;fontColor=#0078D4;spacingLeft=10;" vertex="1" parent="1">
+          <mxGeometry x="60" y="80" width="920" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="lane2" value="Retrieval Flow" style="text;html=1;fontSize=13;fontStyle=3;align=left;verticalAlign=middle;fillColor=#F3E6F3;strokeColor=#742774;rounded=1;arcSize=20;fontColor=#742774;spacingLeft=10;" vertex="1" parent="1">
+          <mxGeometry x="60" y="410" width="920" height="30" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
