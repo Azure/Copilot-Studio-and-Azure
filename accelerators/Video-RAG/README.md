@@ -18,13 +18,66 @@ This enables your Copilot to answer questions based on video content, not just t
 - Educational content repositories
 - Media asset management with natural language search
 
+### Video Walkthrough
+
+<video src="MCS-Azure-VideoRag.mp4" controls width="100%"></video>
+
 ### Design
 
 ![Video RAG Architecture](images-samples/arch.png)
 
 ---
 
-## Automated Deployment
+# Deployment
+
+## 1) Prerequisites
+
+### Azure Subscription Requirements
+- Active Azure subscription with sufficient credits
+- Contributor or Owner role on the subscription/resource group
+- Ability to create and manage Azure resources
+
+### Required Azure Services
+
+| Service | Purpose |
+|---------|---------|
+| Azure Storage Account | Store uploaded videos |
+| Microsoft Foundry (AI Services) | Content Understanding (video analysis) |
+| Azure Key Vault | Securely store AI Search admin key |
+| Azure OpenAI | Generate vector embeddings |
+| Azure AI Search | Index and search content |
+| Logic App | Workflow orchestration |
+| Event Grid | Event-based triggers |
+
+### Model Deployments Required
+
+**In Azure OpenAI:**
+- `text-embedding-3-large` - For generating vector embeddings (3072 dimensions)
+
+**In Microsoft Foundry (Content Understanding):**
+- `gpt-4.1` - For video understanding
+- `gpt-4.1-mini` - For summarization
+- `text-embedding-3-large` - For content vectorization
+
+### Region Support
+
+Not all regions support Content Understanding. The deployment restricts region selection to supported regions. See [Language and region support documentation](https://learn.microsoft.com/en-us/azure/ai-services/content-understanding/language-region-support#region-support) before selecting your region.
+
+### Files Included in This Accelerator
+
+| File | Description |
+|------|-------------|
+| `deploy/azuredeploy.json` | ARM template for one-click deployment |
+| `setup-sample-code/logic-app-sample-code.json` | Logic App workflow definition |
+| `setup-sample-code/ai-search-index-schema.json` | AI Search index definition sample |
+| `images-samples/` | Screenshot references |
+| `video-samples/` | Sample video files about Microsoft Copilot Studio |
+
+> **Why Logic Apps?** Logic Apps provide a low-code way to orchestrate complex workflows with built-in connectors for Azure services, retry policies, and monitoring capabilities.
+
+---
+
+## 2) Automated Deployment (Recommended)
 
 Deploy all required Azure resources with a single click:
 
@@ -88,53 +141,15 @@ After the ARM template completes, there is **one manual step** required to autho
 
 Optionally, verify that gpt-4.1, gpt-4.1-mini, and text-embedding-3-large model deployments succeeded in your selected region. If a model deployment failed due to regional availability, create it manually in the Azure AI Foundry portal.
 
-> **Note:** The template restricts region selection to regions that support Azure Content Understanding. See [region support](https://learn.microsoft.com/en-us/azure/ai-services/content-understanding/language-region-support#region-support).
+After completing the post-deployment step, skip to [Section 5 - Testing](#5-testing-the-solution).
 
 ---
 
-# 1) Prerequisites & What You'll Need
+## 3) Manual Deployment
 
-### Azure Subscription Requirements
-- Active Azure subscription with sufficient credits
-- Contributor or Owner role on the subscription/resource group
-- Ability to create and manage Azure resources
+> **Note:** If you used the automated ARM template deployment above, skip this section entirely and go to [Section 5 - Testing](#5-testing-the-solution).
 
-### Required Azure Services
-
-| Service | Purpose |
-|---------|---------|
-| Azure Storage Account | Store uploaded videos |
-| Microsoft Foundry | Content Understanding (video analysis) 
-| Azure OpenAI | Generate vector embeddings | 
-| Azure AI Search | Index and search content |
-| Logic App | Workflow orchestration |
-| Event Grid | Event-based triggers |
-
-### Model Deployments Required
-
-**In Azure OpenAI:**
-- `text-embedding-3-large` - For generating vector embeddings (3072 dimensions)
-
-**In Microsoft Foundry (Content Understanding):**
-- `gpt-4.1` - For video understanding
-- `gpt-4.1-mini` - For summarization
-- `text-embedding-3-large` - For content vectorization
-
-### Files Included in This Accelerator
-
-| File | Description |
-|------|-------------|
-| `ai-search-index-schema.json` | AI Search index definition sample|
-| `images-samples/` | Screenshot references|
-| `video-samples/` | Sample videos files about Microsoft Copilot Studio|
-
-> **Why Logic Apps?** Logic Apps provide a low-code way to orchestrate complex workflows with built-in connectors for Azure services, retry policies, and monitoring capabilities.
-
----
-
-# 2) Create Azure Resources
-
-## 2.1 Create a Resource Group
+### 3.1 Create a Resource Group
 
 1. Navigate to the [Azure Portal](https://portal.azure.com)
 2. Click **"Create a resource"** → Search for **"Resource group"**
@@ -144,21 +159,17 @@ Optionally, verify that gpt-4.1, gpt-4.1-mini, and text-embedding-3-large model 
    - **Region:** Select a region that supports all services (e.g., Sweden Central, East US 2)
 4. Click **"Review + create"** → **"Create"**
 
-
-## 2.2 Create Storage Account
+### 3.2 Create Storage Account
 
 1. Click **"Create a resource"** → Search for **"Storage account"**
 2. Configure:
    - **Resource group:** `VideoRAG-Project-RG`
    - **Storage account name:** `videoragstorage` (must be globally unique)
    - **Region:** Same as resource group
-
-
 3. After creation, go to **Containers** → **"+ Container"**
 4. Create container named: `uploadedvideocontent`
 
-
-## 2.3 Create Microsoft Foundry for Content Understanding
+### 3.3 Create Microsoft Foundry for Content Understanding
 
 1. Click **"Create a resource"** → Search for **"Microsoft Foundry"**
 2. Configure:
@@ -166,12 +177,22 @@ Optionally, verify that gpt-4.1, gpt-4.1-mini, and text-embedding-3-large model 
    - **Region:** Same region (must support Content Understanding)
    - **Name:** `videorag-foundry`
    - **Default project name:** `videorag-foundry-proj-default`
+3. After creation, navigate to the AI Services resource → **"Identity"** → **"System assigned"** → Set to **"On"** and click **"Save"**
 
-> **Region Support:** Not all regions support Content Understanding. Check the [Language and region support documentation](https://learn.microsoft.com/en-us/azure/ai-services/content-understanding/language-region-support) before selecting your region.
+> **Why enable identity on AI Services?** Content Understanding needs its own managed identity to read video files from blob storage.
 
-## 2.4 Create Azure OpenAI Service
+### 3.4 Create Azure Key Vault
 
-> **⚠️ Important:** You must create an Azure OpenAI resource directly in the Azure portal. Azure OpenAI resources (with access to embedding models) that were created in the Microsoft Foundry portal aren't supported for integrated vectorization with AI Search.
+1. Click **"Create a resource"** → Search for **"Key Vault"**
+2. Configure:
+   - **Resource group:** `VideoRAG-Project-RG`
+   - **Key vault name:** `videorag-kv`
+   - **Region:** Same as resource group
+   - **Permission model:** Azure role-based access control (RBAC)
+
+### 3.5 Create Azure OpenAI Service
+
+> **Important:** You must create an Azure OpenAI resource directly in the Azure portal. Azure OpenAI resources (with access to embedding models) that were created in the Microsoft Foundry portal aren't supported for integrated vectorization with AI Search.
 >
 > Reference: [Integrated vectorization documentation](https://learn.microsoft.com/en-us/azure/search/search-how-to-integrated-vectorization?tabs=prepare-data-storage%2Cprepare-model-aoai)
 
@@ -179,44 +200,39 @@ Optionally, verify that gpt-4.1, gpt-4.1-mini, and text-embedding-3-large model 
 2. Configure:
    - **Resource group:** `VideoRAG-Project-RG`
    - **Name:** `videorag-openai`
-
-
 3. After creation, go to **Azure OpenAI portal** → **Deployments**
 4. Click **"+ Create new deployment"**:
    - **Model:** `text-embedding-3-large`
    - **Deployment name:** `text-embedding-3-large`
 
-
-## 2.5 Create Azure AI Search
+### 3.6 Create Azure AI Search
 
 1. Click **"Create a resource"** → Search for **"Azure AI Search"**
 2. Configure:
    - **Resource group:** `VideoRAG-Project-RG`
    - **Service name:** `videorag-search`
+3. After creation, go to **Keys** and copy the **Primary admin key**
+4. Navigate to your **Key Vault** → **Secrets** → **"+ Generate/Import"**
+   - **Name:** `search-admin-key`
+   - **Value:** Paste the AI Search primary admin key
+   - Click **"Create"**
 
----
-
-# 3) Create AI Search Index
-
-## 3.1 Create Index Schema
+### 3.7 Create AI Search Index
 
 1. Navigate to your AI Search resource
 2. Go to **"Indexes"** → **"+ Add index"**
 3. Set **Index name:** `video-training-index`
 
-## 3.2 Configure Fields
-
-Add the following fields as an example:
+**Configure Fields:**
 
 ![Index Fields](images-samples/index.png)
 
-## 3.3 Configure Vector Search
+**Configure Vector Search:**
 
 1. Scroll to **"Vector profiles"** → **"+ Add vector profile"**
 2. Configure:
    - **Profile name:** `vector-profile`
    - **Algorithm:** HNSW
-
 3. Configure `contentVector` field:
    - **Dimensions:** `3072` (for text-embedding-3-large)
    - **Vector search profile:** `vector-profile`
@@ -226,87 +242,64 @@ Add the following fields as an example:
 
 4. Click **"Create"**
 
-> **Note:** If you used the ARM template, the AI Search index is created automatically. You can skip this section.
-
----
-
-# 4) Create the Logic App
-
-## 4.1 Create Logic App Resource
+### 3.8 Create the Logic App
 
 1. Click **"Create a resource"** → Search for **"Logic App"**
 2. Configure:
    - **Resource group:** `VideoRAG-Project-RG`
    - **Logic App name:** `videorag-automation`
    - **Region:** Same as other resources
-
-## 4.2 Enable Managed Identity
-
-1. Navigate to your Logic App
-2. Go to **"Identity"** → **"System assigned"**
-3. Set Status to **"On"** → Click **"Save"**
+3. After creation, navigate to **"Identity"** → **"System assigned"**
+4. Set Status to **"On"** → Click **"Save"**
 
 ![Enable Managed Identity](images-samples/sys-identity.jpg)
 
-4. Note the **Object ID** for RBAC assignments
+5. Note the **Object ID** for RBAC assignments
 
-> **Note:** If you used the ARM template, the managed identity is already enabled. You can skip this step.
-
----
-
-# 5) Configure Permissions (RBAC)
+### 3.9 Configure Permissions (RBAC)
 
 The Logic App's and AI Services' Managed Identities need access to Azure services.
 
-> **Note:** If you used the ARM template, all RBAC role assignments below are configured automatically. You can skip this section.
-
-## 5.1 Grant Storage Access (Logic App)
+**3.9.1 Grant Storage Access (Logic App)**
 
 1. Navigate to Storage Account → **"Access Control (IAM)"**
 2. Click **"+ Add"** → **"Add role assignment"**
-3. Configure:
-   - **Role:** `Storage Blob Data Reader`
-   - **Assign to:** System identity
-   - **Select:** Your Logic App
+3. Add these roles for your Logic App:
+   - `Storage Blob Data Reader`
+   - `Storage Account Contributor`
+   - `EventGrid EventSubscription Contributor`
 
-## 5.2 Grant Storage Access (AI Services)
+> **Why Storage Account Contributor?** The Logic App generates a short-lived SAS token (1 hour) at runtime so Content Understanding can read the video blob without enabling anonymous access on the storage account.
+
+**3.9.2 Grant Storage Access (AI Services)**
 
 1. Navigate to Storage Account → **"Access Control (IAM)"**
 2. Add role assignment:
    - **Role:** `Storage Blob Data Reader`
    - **Select:** Your AI Services resource (Content Understanding needs to read video files)
 
-## 5.3 Grant Foundry Access
+**3.9.3 Grant Foundry Access**
 
 1. Navigate to Foundry → **"Access Control (IAM)"**
 2. Add role assignment:
    - **Role:** `Cognitive Services User`
    - **Select:** Your Logic App
 
-## 5.4 Grant OpenAI Access
+**3.9.4 Grant OpenAI Access**
 
 1. Navigate to Azure OpenAI → **"Access Control (IAM)"**
 2. Add role assignment:
    - **Role:** `Cognitive Services OpenAI User`
    - **Select:** Your Logic App
 
-## 5.5 Grant Storage SAS Generation Access
-
-1. Navigate to Storage Account → **"Access Control (IAM)"**
-2. Add role assignment:
-   - **Role:** `Storage Account Contributor`
-   - **Select:** Your Logic App
-
-> **Why?** The Logic App generates a short-lived SAS token (1 hour) at runtime so Content Understanding can read the video blob without enabling anonymous access on the storage account.
-
-## 5.6 Grant Key Vault Access
+**3.9.5 Grant Key Vault Access**
 
 1. Navigate to Key Vault → **"Access Control (IAM)"**
 2. Add role assignment:
    - **Role:** `Key Vault Secrets User`
    - **Select:** Your Logic App
 
-### Permission Summary
+**Permission Summary:**
 
 | Identity | Resource | Role |
 |----------|----------|------|
@@ -322,11 +315,11 @@ The Logic App's and AI Services' Managed Identities need access to Azure service
 
 ---
 
-# 6) Build the Logic App Workflow
+## 4) Build the Logic App Workflow (Manual Only)
 
-> **Note:** If you used the ARM template, the Logic App workflow is deployed automatically with all resource URLs and secrets resolved. You can skip to [Section 7 - Testing](#7-testing-the-solution). The steps below are for manual setup or reference.
+> **Note:** If you used the ARM template, the Logic App workflow is deployed automatically with all resource URLs and secrets resolved. Skip to [Section 5 - Testing](#5-testing-the-solution).
 
-## 6.1 Workflow Overview
+### 4.1 Workflow Overview
 
 The Logic App performs these steps:
 
@@ -346,7 +339,7 @@ The Logic App performs these steps:
                                                 └──────────────────────┘
 ```
 
-## 6.2 Add Event Grid Trigger
+### 4.2 Add Event Grid Trigger
 
 1. Open Logic App Designer
 2. Search for **"Event Grid"** → Select **"When a resource event occurs"**
@@ -357,7 +350,7 @@ The Logic App performs these steps:
 4. Add **Prefix Filter:** `/blobServices/default/containers/uploadedvideocontent`
 5. Click **Settings** (⋯) → Enable **Concurrency Control** → Set to `50`
 
-## 6.3 Add Parse JSON (Parse Trigger)
+### 4.3 Add Parse JSON (Parse Trigger)
 
 1. Click **"+ New step"** → Search **"Parse JSON"**
 2. Configure:
@@ -402,7 +395,7 @@ The Logic App performs these steps:
 
 3. Rename to `Parse_trigger_body`
 
-## 6.4 Initialize Variables
+### 4.4 Initialize Variables
 
 Add two **Initialize variable** actions. The first initializes blob info variables together, and the second creates the document ID (kept separate because it depends on `vBlobUrl`):
 
@@ -424,7 +417,7 @@ Add two **Initialize variable** actions. The first initializes blob info variabl
 
 > **Important:** The `vDocumentId` uses Base64 encoding to create a valid AI Search document key. This handles ALL special characters automatically (spaces, slashes, dots, etc.).
 
-## 6.5 Add HTTP Action (Set Defaults)
+### 4.5 Add HTTP Action (Set Defaults)
 
 1. Add **HTTP** action
 2. Configure:
@@ -452,7 +445,7 @@ Add two **Initialize variable** actions. The first initializes blob info variabl
 
 3. Rename to `Set_defaults`
 
-## 6.6 Add HTTP Action (Generate SAS Token)
+### 4.6 Add HTTP Action (Generate SAS Token)
 
 1. Add **HTTP** action
 2. Configure:
@@ -475,7 +468,7 @@ Add two **Initialize variable** actions. The first initializes blob info variabl
 
 > **Why SAS?** The storage account blocks anonymous access. This step generates a read-only, 1-hour SAS token so Content Understanding can securely access the video blob.
 
-## 6.7 Add HTTP Action (Call Content Understanding)
+### 4.7 Add HTTP Action (Call Content Understanding)
 
 1. Add **HTTP** action
 2. Configure:
@@ -499,7 +492,7 @@ Add two **Initialize variable** actions. The first initializes blob info variabl
 
 3. Rename to `Call_Content_Understanding`
 
-## 6.8 Parse CU Body
+### 4.8 Parse CU Body
 
 1. Click **"+ New step"** → Search **"Parse JSON"**
 2. Configure:
@@ -526,7 +519,7 @@ Add two **Initialize variable** actions. The first initializes blob info variabl
 }
 ```
 
-## 6.9 Initialize Polling Variables
+### 4.9 Initialize Polling Variables
 
 Add a single **Initialize variable** action with both variables:
 
@@ -535,7 +528,7 @@ Add a single **Initialize variable** action with both variables:
 | `vOperationLocation` | String | `outputs('Call_Content_Understanding')?['headers']?['Operation-Location']` |
 | `vAnalyzerStatus` | String | `notStarted` |
 
-## 6.10 Add Polling Loop (Until)
+### 4.10 Add Polling Loop (Until)
 
 1. Add **Until** action
 2. Set condition (Advanced mode):
@@ -567,7 +560,7 @@ Add a single **Initialize variable** action with both variables:
 - **Name:** `vAnalyzerStatus`
 - **Value:** `@body('Parse_JSON')?['status']`
 
-## 6.11 Add Failure Check Condition
+### 4.11 Add Failure Check Condition
 
 1. After Until loop, add **Condition**
 2. Set condition (Advanced mode):
@@ -579,7 +572,7 @@ Add a single **Initialize variable** action with both variables:
    - **Status:** Failed
    - **Message:** `Content Understanding analysis failed for @{variables('vBlobName')}`
 
-## 6.12 Parse Final Result
+### 4.12 Parse Final Result
 
 1. Add **Parse JSON** action
 2. Configure:
@@ -588,7 +581,7 @@ Add a single **Initialize variable** action with both variables:
 
 3. Rename to `Parse_Call_Result_JSON`
 
-## 6.13 Initialize Transcript and Summary Variables
+### 4.13 Initialize Transcript and Summary Variables
 
 Add a single **Initialize variable** action with both variables:
 
@@ -597,7 +590,7 @@ Add a single **Initialize variable** action with both variables:
 | `vTranscriptText` | String | *(empty)* |
 | `vSummaryText` | String | *(empty)* |
 
-## 6.14 Add For Each Loop (Extract Content)
+### 4.14 Add For Each Loop (Extract Content)
 
 1. Add **For each** action
 2. Set **From:** `@body('Parse_Call_Result_JSON')?['result']?['contents']`
@@ -618,7 +611,7 @@ Add a single **Initialize variable** action with both variables:
 
 ![For Each Content](images-samples/for-each-content.jpg)
 
-## 6.15 Add Content Check and Final Actions
+### 4.15 Add Content Check and Final Actions
 
 1. Add **Condition** to check content exists:
 ```
@@ -680,32 +673,28 @@ Add a single **Initialize variable** action with both variables:
 
 Add **Terminate** with Failed status: `No transcript content extracted`
 
-## 6.17 Save the Logic App
+### 4.16 Save the Logic App
 
 Click **"Save"** in the toolbar.
 
-
 ---
 
-# 7) Testing the Solution
+# 5) Testing the Solution
 
-## 7.1 Upload Test Video
+## 5.1 Upload Test Video
 
 1. Navigate to Storage Account → **Containers** → `uploadedvideocontent`
 2. Click **"Upload"** → Select a test video (MP4 recommended)
 3. Start with a short video (1-2 minutes) for faster testing
 
-
-## 7.2 Monitor Logic App Run
+## 5.2 Monitor Logic App Run
 
 1. Navigate to Logic App → **"Overview"**
 2. Check **"Runs history"** for new run
-
 3. Click on run to see details
 4. Verify all actions show green checkmarks
 
-
-## 7.3 Verify AI Search Results
+## 5.3 Verify AI Search Results
 
 1. Navigate to AI Search → **"Search explorer"**
 2. Run query: `*`
@@ -715,12 +704,11 @@ Click **"Save"** in the toolbar.
    - Transcript content
    - Content vector array
 
-
 ---
 
-# 8) Connect to Copilot Studio
+# 6) Connect to Copilot Studio
 
-## 8.1 Create Custom Connector 
+## 6.1 Create Custom Connector
 
 To query the indexed videos from Copilot Studio, you can:
 
@@ -732,7 +720,7 @@ To query the indexed videos from Copilot Studio, you can:
 
 ![Copilot Agent](images-samples/copilot-agent.jpg)
 
-## 8.2 Query Videos by Content
+## 6.2 Query Videos by Content
 
 Once indexed, videos can be searched using:
 
@@ -759,6 +747,3 @@ The AI Search index returns matching videos with their source URLs, enabling pla
 - [Azure OpenAI Embeddings](https://learn.microsoft.com/azure/ai-services/openai/concepts/understand-embeddings)
 - [Copilot Studio Connectors](https://learn.microsoft.com/microsoft-copilot-studio/advanced-connectors)
 - [Microsoft Foundry Overview](https://learn.microsoft.com/en-us/azure/ai-foundry/what-is-foundry)
----
-
-## Additional Links
