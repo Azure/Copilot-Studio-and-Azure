@@ -1,0 +1,1232 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "description": "Deploys the Video RAG Accelerator infrastructure: Storage Account, Azure AI Services (Content Understanding), Azure OpenAI, Azure AI Search, Logic App with Event Grid trigger, managed identities, and RBAC role assignments.",
+    "_generator": {
+      "name": "Video RAG Accelerator ARM Template"
+    }
+  },
+  "parameters": {
+    "location": {
+      "type": "string",
+      "allowedValues": [
+        "eastus",
+        "eastus2",
+        "westus",
+        "westus2",
+        "westus3",
+        "northcentralus",
+        "southcentralus",
+        "westeurope",
+        "northeurope",
+        "swedencentral",
+        "uksouth",
+        "southeastasia",
+        "australiaeast",
+        "japaneast"
+      ],
+      "metadata": {
+        "description": "Azure region for all resources. Must support Azure Content Understanding. See https://learn.microsoft.com/en-us/azure/ai-services/content-understanding/language-region-support#region-support"
+      }
+    },
+    "resourcePrefix": {
+      "type": "string",
+      "defaultValue": "videorag",
+      "minLength": 3,
+      "maxLength": 10,
+      "metadata": {
+        "description": "Prefix for all resource names. Lowercase letters and numbers only."
+      }
+    },
+    "searchServiceSku": {
+      "type": "string",
+      "defaultValue": "basic",
+      "allowedValues": [
+        "basic",
+        "standard",
+        "standard2",
+        "standard3"
+      ],
+      "metadata": {
+        "description": "Pricing tier for Azure AI Search."
+      }
+    }
+  },
+  "variables": {
+    "uniqueSuffix": "[uniqueString(resourceGroup().id)]",
+    "storageAccountName": "[take(concat(toLower(parameters('resourcePrefix')), variables('uniqueSuffix')), 24)]",
+    "aiServicesName": "[concat(parameters('resourcePrefix'), '-aiservices-', take(variables('uniqueSuffix'), 6))]",
+    "openAiName": "[concat(parameters('resourcePrefix'), '-openai-', take(variables('uniqueSuffix'), 6))]",
+    "searchServiceName": "[concat(parameters('resourcePrefix'), '-search-', take(variables('uniqueSuffix'), 6))]",
+    "logicAppName": "[concat(parameters('resourcePrefix'), '-automation')]",
+    "keyVaultName": "[concat(parameters('resourcePrefix'), '-kv-', take(variables('uniqueSuffix'), 6))]",
+    "foundryHubName": "[concat(parameters('resourcePrefix'), '-hub-', take(variables('uniqueSuffix'), 6))]",
+    "foundryProjectName": "[concat(parameters('resourcePrefix'), '-proj-default')]",
+    "eventGridConnectionName": "azureeventgrid-1",
+    "containerName": "uploadedvideocontent",
+    "searchIndexName": "video-training-index",
+    "embeddingDeploymentName": "text-embedding-3-large",
+    "embeddingModelVersion": "1",
+    "storageBlobDataReaderRoleId": "2a2b9908-6ea1-4ae2-8e65-a410df84e7d1",
+    "eventGridContributorRoleId": "428e0ff0-5e57-4d9c-a221-2c70d0e0a443",
+    "cognitiveServicesUserRoleId": "a97b65f3-24c7-4388-baec-2e87135dc908",
+    "cognitiveServicesOpenAIUserRoleId": "5e0bd9bd-7b93-4f28-af87-19fc36ad61bd",
+    "keyVaultSecretsUserRoleId": "4633458b-17de-408a-b874-0445c86b69e6",
+    "storageAccountContributorRoleId": "17d1049b-9a84-46fb-8f53-869881c3d3ab",
+    "searchAdminKeySecretName": "search-admin-key"
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Storage/storageAccounts",
+      "apiVersion": "2023-05-01",
+      "name": "[variables('storageAccountName')]",
+      "location": "[parameters('location')]",
+      "sku": {
+        "name": "Standard_LRS"
+      },
+      "kind": "StorageV2",
+      "properties": {
+        "supportsHttpsTrafficOnly": true,
+        "minimumTlsVersion": "TLS1_2",
+        "allowBlobPublicAccess": false
+      }
+    },
+    {
+      "type": "Microsoft.Storage/storageAccounts/blobServices/containers",
+      "apiVersion": "2023-05-01",
+      "name": "[concat(variables('storageAccountName'), '/default/', variables('containerName'))]",
+      "dependsOn": [
+        "[resourceId('Microsoft.Storage/storageAccounts', variables('storageAccountName'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.CognitiveServices/accounts",
+      "apiVersion": "2024-10-01",
+      "name": "[variables('aiServicesName')]",
+      "location": "[parameters('location')]",
+      "sku": {
+        "name": "S0"
+      },
+      "kind": "AIServices",
+      "identity": {
+        "type": "SystemAssigned"
+      },
+      "properties": {
+        "publicNetworkAccess": "Enabled",
+        "customSubDomainName": "[variables('aiServicesName')]"
+      }
+    },
+    {
+      "type": "Microsoft.CognitiveServices/accounts/deployments",
+      "apiVersion": "2024-10-01",
+      "name": "[concat(variables('aiServicesName'), '/gpt-4.1')]",
+      "dependsOn": [
+        "[resourceId('Microsoft.CognitiveServices/accounts', variables('aiServicesName'))]"
+      ],
+      "sku": {
+        "name": "Standard",
+        "capacity": 1
+      },
+      "properties": {
+        "model": {
+          "format": "OpenAI",
+          "name": "gpt-4.1",
+          "version": "2025-04-14"
+        }
+      }
+    },
+    {
+      "type": "Microsoft.CognitiveServices/accounts/deployments",
+      "apiVersion": "2024-10-01",
+      "name": "[concat(variables('aiServicesName'), '/gpt-4.1-mini')]",
+      "dependsOn": [
+        "[resourceId('Microsoft.CognitiveServices/accounts', variables('aiServicesName'))]",
+        "[resourceId('Microsoft.CognitiveServices/accounts/deployments', variables('aiServicesName'), 'gpt-4.1')]"
+      ],
+      "sku": {
+        "name": "Standard",
+        "capacity": 1
+      },
+      "properties": {
+        "model": {
+          "format": "OpenAI",
+          "name": "gpt-4.1-mini",
+          "version": "2025-04-14"
+        }
+      }
+    },
+    {
+      "type": "Microsoft.CognitiveServices/accounts/deployments",
+      "apiVersion": "2024-10-01",
+      "name": "[concat(variables('aiServicesName'), '/', variables('embeddingDeploymentName'))]",
+      "dependsOn": [
+        "[resourceId('Microsoft.CognitiveServices/accounts', variables('aiServicesName'))]",
+        "[resourceId('Microsoft.CognitiveServices/accounts/deployments', variables('aiServicesName'), 'gpt-4.1-mini')]"
+      ],
+      "sku": {
+        "name": "Standard",
+        "capacity": 1
+      },
+      "properties": {
+        "model": {
+          "format": "OpenAI",
+          "name": "text-embedding-3-large",
+          "version": "[variables('embeddingModelVersion')]"
+        }
+      }
+    },
+    {
+      "type": "Microsoft.KeyVault/vaults",
+      "apiVersion": "2023-07-01",
+      "name": "[variables('keyVaultName')]",
+      "location": "[parameters('location')]",
+      "properties": {
+        "tenantId": "[subscription().tenantId]",
+        "sku": {
+          "family": "A",
+          "name": "standard"
+        },
+        "accessPolicies": [],
+        "enableSoftDelete": true,
+        "enableRbacAuthorization": true
+      }
+    },
+    {
+      "type": "Microsoft.KeyVault/vaults/secrets",
+      "apiVersion": "2023-07-01",
+      "name": "[concat(variables('keyVaultName'), '/', variables('searchAdminKeySecretName'))]",
+      "dependsOn": [
+        "[resourceId('Microsoft.KeyVault/vaults', variables('keyVaultName'))]",
+        "[resourceId('Microsoft.Search/searchServices', variables('searchServiceName'))]"
+      ],
+      "properties": {
+        "value": "[listAdminKeys(resourceId('Microsoft.Search/searchServices', variables('searchServiceName')), '2024-03-01-preview').primaryKey]"
+      }
+    },
+    {
+      "type": "Microsoft.MachineLearningServices/workspaces",
+      "apiVersion": "2024-10-01",
+      "name": "[variables('foundryHubName')]",
+      "location": "[parameters('location')]",
+      "kind": "Hub",
+      "sku": {
+        "name": "Basic",
+        "tier": "Basic"
+      },
+      "identity": {
+        "type": "SystemAssigned"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Storage/storageAccounts', variables('storageAccountName'))]",
+        "[resourceId('Microsoft.KeyVault/vaults', variables('keyVaultName'))]",
+        "[resourceId('Microsoft.CognitiveServices/accounts', variables('aiServicesName'))]"
+      ],
+      "properties": {
+        "friendlyName": "[variables('foundryHubName')]",
+        "storageAccount": "[resourceId('Microsoft.Storage/storageAccounts', variables('storageAccountName'))]",
+        "keyVault": "[resourceId('Microsoft.KeyVault/vaults', variables('keyVaultName'))]"
+      }
+    },
+    {
+      "type": "Microsoft.MachineLearningServices/workspaces/connections",
+      "apiVersion": "2024-10-01",
+      "name": "[concat(variables('foundryHubName'), '/', variables('aiServicesName'), '-connection')]",
+      "dependsOn": [
+        "[resourceId('Microsoft.MachineLearningServices/workspaces', variables('foundryHubName'))]",
+        "[resourceId('Microsoft.CognitiveServices/accounts', variables('aiServicesName'))]"
+      ],
+      "properties": {
+        "category": "AIServices",
+        "authType": "AAD",
+        "isSharedToAll": true,
+        "target": "[reference(resourceId('Microsoft.CognitiveServices/accounts', variables('aiServicesName'))).endpoint]",
+        "metadata": {
+          "ApiType": "Azure",
+          "ResourceId": "[resourceId('Microsoft.CognitiveServices/accounts', variables('aiServicesName'))]"
+        }
+      }
+    },
+    {
+      "type": "Microsoft.MachineLearningServices/workspaces",
+      "apiVersion": "2024-10-01",
+      "name": "[variables('foundryProjectName')]",
+      "location": "[parameters('location')]",
+      "kind": "Project",
+      "sku": {
+        "name": "Basic",
+        "tier": "Basic"
+      },
+      "identity": {
+        "type": "SystemAssigned"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.MachineLearningServices/workspaces', variables('foundryHubName'))]"
+      ],
+      "properties": {
+        "friendlyName": "[variables('foundryProjectName')]",
+        "hubResourceId": "[resourceId('Microsoft.MachineLearningServices/workspaces', variables('foundryHubName'))]"
+      }
+    },
+    {
+      "type": "Microsoft.CognitiveServices/accounts",
+      "apiVersion": "2024-10-01",
+      "name": "[variables('openAiName')]",
+      "location": "[parameters('location')]",
+      "sku": {
+        "name": "S0"
+      },
+      "kind": "OpenAI",
+      "properties": {
+        "publicNetworkAccess": "Enabled",
+        "customSubDomainName": "[variables('openAiName')]"
+      }
+    },
+    {
+      "type": "Microsoft.CognitiveServices/accounts/deployments",
+      "apiVersion": "2024-10-01",
+      "name": "[concat(variables('openAiName'), '/', variables('embeddingDeploymentName'))]",
+      "dependsOn": [
+        "[resourceId('Microsoft.CognitiveServices/accounts', variables('openAiName'))]"
+      ],
+      "sku": {
+        "name": "Standard",
+        "capacity": 1
+      },
+      "properties": {
+        "model": {
+          "format": "OpenAI",
+          "name": "text-embedding-3-large",
+          "version": "[variables('embeddingModelVersion')]"
+        }
+      }
+    },
+    {
+      "type": "Microsoft.Search/searchServices",
+      "apiVersion": "2024-03-01-preview",
+      "name": "[variables('searchServiceName')]",
+      "location": "[parameters('location')]",
+      "sku": {
+        "name": "[parameters('searchServiceSku')]"
+      },
+      "properties": {
+        "replicaCount": 1,
+        "partitionCount": 1,
+        "hostingMode": "default"
+      }
+    },
+    {
+      "type": "Microsoft.Resources/deploymentScripts",
+      "apiVersion": "2023-08-01",
+      "name": "createSearchIndex",
+      "location": "[parameters('location')]",
+      "kind": "AzureCLI",
+      "dependsOn": [
+        "[resourceId('Microsoft.Search/searchServices', variables('searchServiceName'))]",
+        "[resourceId('Microsoft.CognitiveServices/accounts/deployments', variables('openAiName'), variables('embeddingDeploymentName'))]"
+      ],
+      "properties": {
+        "azCliVersion": "2.63.0",
+        "retentionInterval": "PT1H",
+        "timeout": "PT10M",
+        "environmentVariables": [
+          {
+            "name": "SEARCH_SERVICE_NAME",
+            "value": "[variables('searchServiceName')]"
+          },
+          {
+            "name": "SEARCH_ADMIN_KEY",
+            "secureValue": "[listAdminKeys(resourceId('Microsoft.Search/searchServices', variables('searchServiceName')), '2024-03-01-preview').primaryKey]"
+          },
+          {
+            "name": "INDEX_NAME",
+            "value": "[variables('searchIndexName')]"
+          },
+          {
+            "name": "OPENAI_RESOURCE_URI",
+            "value": "[reference(resourceId('Microsoft.CognitiveServices/accounts', variables('openAiName'))).endpoint]"
+          },
+          {
+            "name": "OPENAI_API_KEY",
+            "secureValue": "[listKeys(resourceId('Microsoft.CognitiveServices/accounts', variables('openAiName')), '2024-10-01').key1]"
+          }
+        ],
+        "scriptContent": "python3 << 'PYEOF'\nimport json, os, sys\nfrom urllib.request import Request, urlopen\nfrom urllib.error import HTTPError\n\nindex_body = {\n    \"name\": os.environ[\"INDEX_NAME\"],\n    \"fields\": [\n        {\"name\": \"id\", \"type\": \"Edm.String\", \"searchable\": False, \"filterable\": True, \"retrievable\": True, \"stored\": True, \"sortable\": False, \"facetable\": False, \"key\": True},\n        {\"name\": \"title\", \"type\": \"Edm.String\", \"searchable\": True, \"filterable\": False, \"retrievable\": True, \"stored\": True, \"sortable\": False, \"facetable\": False, \"key\": False},\n        {\"name\": \"sourceUrl\", \"type\": \"Edm.String\", \"searchable\": False, \"filterable\": False, \"retrievable\": True, \"stored\": True, \"sortable\": False, \"facetable\": False, \"key\": False},\n        {\"name\": \"content\", \"type\": \"Edm.String\", \"searchable\": True, \"filterable\": False, \"retrievable\": True, \"stored\": True, \"sortable\": False, \"facetable\": False, \"key\": False},\n        {\"name\": \"summary\", \"type\": \"Edm.String\", \"searchable\": True, \"filterable\": False, \"retrievable\": True, \"stored\": True, \"sortable\": False, \"facetable\": False, \"key\": False},\n        {\"name\": \"type\", \"type\": \"Edm.String\", \"searchable\": False, \"filterable\": True, \"retrievable\": True, \"stored\": True, \"sortable\": False, \"facetable\": False, \"key\": False},\n        {\"name\": \"createdAt\", \"type\": \"Edm.DateTimeOffset\", \"searchable\": False, \"filterable\": True, \"retrievable\": True, \"stored\": True, \"sortable\": True, \"facetable\": False, \"key\": False},\n        {\"name\": \"contentVector\", \"type\": \"Collection(Edm.Single)\", \"searchable\": True, \"filterable\": False, \"retrievable\": False, \"stored\": False, \"sortable\": False, \"facetable\": False, \"key\": False, \"dimensions\": 3072, \"vectorSearchProfile\": \"vector-profile\"}\n    ],\n    \"similarity\": {\"@odata.type\": \"#Microsoft.Azure.Search.BM25Similarity\"},\n    \"semantic\": {\n        \"configurations\": [{\n            \"name\": \"semantic-config\",\n            \"prioritizedFields\": {\n                \"titleField\": {\"fieldName\": \"title\"},\n                \"prioritizedContentFields\": [{\"fieldName\": \"content\"}, {\"fieldName\": \"summary\"}],\n                \"prioritizedKeywordsFields\": []\n            }\n        }]\n    },\n    \"vectorSearch\": {\n        \"algorithms\": [{\"name\": \"hnsw-algo\", \"kind\": \"hnsw\", \"hnswParameters\": {\"metric\": \"cosine\", \"m\": 4, \"efConstruction\": 400, \"efSearch\": 500}}],\n        \"profiles\": [{\"name\": \"vector-profile\", \"algorithm\": \"hnsw-algo\", \"vectorizer\": \"openai-vectorizer\"}],\n        \"vectorizers\": [{\n            \"name\": \"openai-vectorizer\",\n            \"kind\": \"azureOpenAI\",\n            \"azureOpenAIParameters\": {\n                \"resourceUri\": os.environ[\"OPENAI_RESOURCE_URI\"],\n                \"deploymentId\": \"text-embedding-3-large\",\n                \"apiKey\": os.environ[\"OPENAI_API_KEY\"],\n                \"modelName\": \"text-embedding-3-large\"\n            }\n        }],\n        \"compressions\": []\n    }\n}\n\nurl = f'https://{os.environ[\"SEARCH_SERVICE_NAME\"]}.search.windows.net/indexes/{os.environ[\"INDEX_NAME\"]}?api-version=2024-07-01'\ndata = json.dumps(index_body).encode('utf-8')\nreq = Request(url, data=data, method='PUT')\nreq.add_header('Content-Type', 'application/json')\nreq.add_header('api-key', os.environ['SEARCH_ADMIN_KEY'])\n\ntry:\n    resp = urlopen(req)\n    print(f'Index created successfully (HTTP {resp.status})')\n    print(resp.read().decode('utf-8'))\nexcept HTTPError as e:\n    print(f'Failed to create index (HTTP {e.code})')\n    print(e.read().decode('utf-8'))\n    sys.exit(1)\nPYEOF"
+      }
+    },
+    {
+      "type": "Microsoft.Web/connections",
+      "apiVersion": "2016-06-01",
+      "name": "[variables('eventGridConnectionName')]",
+      "location": "[parameters('location')]",
+      "properties": {
+        "displayName": "Event Grid Connection",
+        "api": {
+          "id": "[subscriptionResourceId('Microsoft.Web/locations/managedApis', parameters('location'), 'azureeventgrid')]"
+        }
+      }
+    },
+    {
+      "type": "Microsoft.Logic/workflows",
+      "apiVersion": "2019-05-01",
+      "name": "[variables('logicAppName')]",
+      "location": "[parameters('location')]",
+      "identity": {
+        "type": "SystemAssigned"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Storage/storageAccounts/blobServices/containers', variables('storageAccountName'), 'default', variables('containerName'))]",
+        "[resourceId('Microsoft.CognitiveServices/accounts/deployments', variables('aiServicesName'), variables('embeddingDeploymentName'))]",
+        "[resourceId('Microsoft.CognitiveServices/accounts/deployments', variables('openAiName'), variables('embeddingDeploymentName'))]",
+        "[resourceId('Microsoft.Search/searchServices', variables('searchServiceName'))]",
+        "[resourceId('Microsoft.Web/connections', variables('eventGridConnectionName'))]"
+      ],
+      "properties": {
+        "state": "Enabled",
+        "definition": {
+          "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+          "contentVersion": "1.0.0.0",
+          "triggers": {
+            "When_a_resource_event_occurs": {
+              "type": "ApiConnectionWebhook",
+              "inputs": {
+                "host": {
+                  "connection": {
+                    "name": "@parameters('$connections')['azureeventgrid-1']['connectionId']"
+                  }
+                },
+                "body": {
+                  "properties": {
+                    "topic": "[resourceId('Microsoft.Storage/storageAccounts', variables('storageAccountName'))]",
+                    "destination": {
+                      "endpointType": "webhook",
+                      "properties": {
+                        "endpointUrl": "@listCallbackUrl()"
+                      }
+                    },
+                    "filter": {
+                      "includedEventTypes": [
+                        "Microsoft.Storage.BlobCreated"
+                      ],
+                      "subjectBeginsWith": "/blobServices/default/containers/uploadedvideocontent"
+                    }
+                  }
+                },
+                "path": "[concat('/subscriptions/', subscription().subscriptionId, '/providers/Microsoft.Storage.StorageAccounts/resource/eventSubscriptions')]",
+                "queries": {
+                  "x-ms-api-version": "2017-09-15-preview"
+                }
+              },
+              "description": "Triggers when a new blob is created in the uploadedvideocontent container.",
+              "runtimeConfiguration": {
+                "concurrency": {
+                  "runs": 50
+                }
+              }
+            }
+          },
+          "actions": {
+            "Parse_trigger_body": {
+              "runAfter": {},
+              "type": "ParseJson",
+              "inputs": {
+                "content": "@first(triggerBody())",
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "topic": { "type": "string" },
+                    "subject": { "type": "string" },
+                    "eventType": { "type": "string" },
+                    "id": { "type": "string" },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "api": { "type": "string" },
+                        "clientRequestId": { "type": "string" },
+                        "requestId": { "type": "string" },
+                        "eTag": { "type": "string" },
+                        "contentType": { "type": "string" },
+                        "contentLength": { "type": "integer" },
+                        "blobType": { "type": "string" },
+                        "accessTier": { "type": "string" },
+                        "url": { "type": "string" },
+                        "sequencer": { "type": "string" },
+                        "storageDiagnostics": {
+                          "type": "object",
+                          "properties": {
+                            "batchId": { "type": "string" }
+                          }
+                        }
+                      }
+                    },
+                    "dataVersion": { "type": "string" },
+                    "metadataVersion": { "type": "string" },
+                    "eventTime": { "type": "string" }
+                  }
+                }
+              },
+              "description": "Parse the Event Grid trigger payload to extract blob information."
+            },
+            "varBlobInfo": {
+              "runAfter": {
+                "Parse_trigger_body": [ "Succeeded" ]
+              },
+              "type": "InitializeVariable",
+              "inputs": {
+                "variables": [
+                  {
+                    "name": "vBlobUrl",
+                    "type": "string",
+                    "value": "@{body('Parse_trigger_body')?['data']?['url']}"
+                  },
+                  {
+                    "name": "vBlobName",
+                    "type": "string",
+                    "value": "@{last(split(body('Parse_trigger_body')?['data']?['url'],'/'))}"
+                  },
+                  {
+                    "name": "vContainer",
+                    "type": "string",
+                    "value": "@{split(body('Parse_trigger_body')?['data']?['url'],'/')[3]}"
+                  }
+                ]
+              },
+              "description": "Initialize variables for blob URL, blob name (filename), and container name extracted from the event data."
+            },
+            "varDocumentId": {
+              "runAfter": {
+                "varBlobInfo": [ "Succeeded" ]
+              },
+              "type": "InitializeVariable",
+              "inputs": {
+                "variables": [
+                  {
+                    "name": "vDocumentId",
+                    "type": "string",
+                    "value": "@{base64(variables('vBlobUrl'))}"
+                  }
+                ]
+              },
+              "description": "Create a deterministic document ID from the blob URL using Base64 encoding."
+            },
+            "Set_defaults": {
+              "runAfter": {
+                "varDocumentId": [ "Succeeded" ]
+              },
+              "type": "Http",
+              "inputs": {
+                "uri": "[concat('https://', variables('aiServicesName'), '.services.ai.azure.com/contentunderstanding/defaults?api-version=2025-11-01')]",
+                "method": "PATCH",
+                "headers": {
+                  "Content-Type": "application/json"
+                },
+                "body": {
+                  "modelDeployments": {
+                    "gpt-4.1": "gpt-4.1",
+                    "gpt-4.1-mini": "gpt-4.1-mini",
+                    "text-embedding-3-large": "text-embedding-3-large"
+                  },
+                  "storage": {
+                    "type": "AzureBlob",
+                    "containerUri": "[concat('https://', variables('storageAccountName'), '.blob.core.windows.net/', variables('containerName'))]"
+                  }
+                },
+                "authentication": {
+                  "type": "ManagedServiceIdentity",
+                  "audience": "https://cognitiveservices.azure.com"
+                }
+              },
+              "description": "Configure Content Understanding defaults including model deployments and storage location.",
+              "runtimeConfiguration": {
+                "contentTransfer": {
+                  "transferMode": "Chunked"
+                }
+              }
+            },
+            "Generate_SAS_Token": {
+              "runAfter": {
+                "Set_defaults": [ "Succeeded" ]
+              },
+              "type": "Http",
+              "inputs": {
+                "uri": "[concat('https://management.azure.com/subscriptions/', subscription().subscriptionId, '/resourceGroups/', resourceGroup().name, '/providers/Microsoft.Storage/storageAccounts/', variables('storageAccountName'), '/ListServiceSas?api-version=2023-05-01')]",
+                "method": "POST",
+                "body": {
+                  "canonicalizedResource": "[concat('/blob/', variables('storageAccountName'), '/', variables('containerName'))]",
+                  "signedResource": "c",
+                  "signedPermission": "r",
+                  "signedProtocol": "https",
+                  "signedExpiry": "@{addHours(utcNow(), 1)}"
+                },
+                "authentication": {
+                  "type": "ManagedServiceIdentity",
+                  "audience": "https://management.azure.com"
+                }
+              },
+              "description": "Generate a read-only SAS token (1 hour expiry) for the blob container so Content Understanding can access the video.",
+              "runtimeConfiguration": {
+                "secureData": {
+                  "properties": [ "outputs" ]
+                }
+              }
+            },
+            "Call_Content_Understanding": {
+              "runAfter": {
+                "Generate_SAS_Token": [ "Succeeded" ]
+              },
+              "type": "Http",
+              "inputs": {
+                "uri": "[concat('https://', variables('aiServicesName'), '.cognitiveservices.azure.com/contentunderstanding/analyzers/prebuilt-videoSearch:analyze?api-version=2025-11-01')]",
+                "method": "POST",
+                "headers": {
+                  "Content-Type": "application/json"
+                },
+                "body": {
+                  "inputs": [
+                    {
+                      "url": "@{variables('vBlobUrl')}?@{body('Generate_SAS_Token')?['serviceSasToken']}"
+                    }
+                  ]
+                },
+                "authentication": {
+                  "type": "ManagedServiceIdentity",
+                  "audience": "https://cognitiveservices.azure.com"
+                }
+              },
+              "description": "Start async video analysis using Content Understanding prebuilt-videoSearch analyzer with SAS token for blob access.",
+              "runtimeConfiguration": {
+                "contentTransfer": {
+                  "transferMode": "Chunked"
+                }
+              }
+            },
+            "Parse_CU_Body": {
+              "runAfter": {
+                "Call_Content_Understanding": [ "Succeeded" ]
+              },
+              "type": "ParseJson",
+              "inputs": {
+                "content": "@body('Call_Content_Understanding')",
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": { "type": "string" },
+                    "status": { "type": "string" },
+                    "result": {
+                      "type": "object",
+                      "properties": {
+                        "analyzerId": { "type": "string" },
+                        "apiVersion": { "type": "string" },
+                        "createdAt": { "type": "string" },
+                        "warnings": { "type": "array" },
+                        "contents": { "type": "array" }
+                      }
+                    }
+                  }
+                }
+              },
+              "description": "Parse the initial Content Understanding response."
+            },
+            "varPollingInfo": {
+              "runAfter": {
+                "Parse_CU_Body": [ "Succeeded" ]
+              },
+              "type": "InitializeVariable",
+              "inputs": {
+                "variables": [
+                  {
+                    "name": "vOperationLocation",
+                    "type": "string",
+                    "value": "@{outputs('Call_Content_Understanding')?['headers']?['Operation-Location']}"
+                  },
+                  {
+                    "name": "vAnalyzerStatus",
+                    "type": "string",
+                    "value": "notStarted"
+                  }
+                ]
+              },
+              "description": "Store the Operation-Location header URL for polling and initialize status tracking variable."
+            },
+            "Until_succeeded": {
+              "actions": {
+                "Delay_15_seconds": {
+                  "type": "Wait",
+                  "inputs": {
+                    "interval": {
+                      "count": 15,
+                      "unit": "Second"
+                    }
+                  },
+                  "description": "Wait 15 seconds between status checks."
+                },
+                "Check_Status": {
+                  "runAfter": {
+                    "Delay_15_seconds": [ "Succeeded" ]
+                  },
+                  "type": "Http",
+                  "inputs": {
+                    "uri": "@variables('vOperationLocation')",
+                    "method": "GET",
+                    "authentication": {
+                      "type": "ManagedServiceIdentity",
+                      "audience": "https://cognitiveservices.azure.com"
+                    }
+                  },
+                  "description": "Poll the operation location URL to check analysis status.",
+                  "runtimeConfiguration": {
+                    "contentTransfer": {
+                      "transferMode": "Chunked"
+                    }
+                  }
+                },
+                "Parse_JSON": {
+                  "runAfter": {
+                    "Check_Status": [ "Succeeded" ]
+                  },
+                  "type": "ParseJson",
+                  "inputs": {
+                    "content": "@body('Check_Status')",
+                    "schema": {
+                      "type": "object",
+                      "properties": {
+                        "id": { "type": "string" },
+                        "status": { "type": "string" },
+                        "result": {
+                          "type": "object",
+                          "properties": {
+                            "analyzerId": { "type": "string" },
+                            "apiVersion": { "type": "string" },
+                            "createdAt": { "type": "string" },
+                            "warnings": { "type": "array" },
+                            "contents": { "type": "array" }
+                          }
+                        }
+                      }
+                    }
+                  },
+                  "description": "Parse the status check response."
+                },
+                "Set_variable": {
+                  "runAfter": {
+                    "Parse_JSON": [ "Succeeded" ]
+                  },
+                  "type": "SetVariable",
+                  "inputs": {
+                    "name": "vAnalyzerStatus",
+                    "value": "@body('Parse_JSON')?['status']"
+                  },
+                  "description": "Update the status variable."
+                }
+              },
+              "runAfter": {
+                "varPollingInfo": [ "Succeeded" ]
+              },
+              "expression": "@or(equals(variables('vAnalyzerStatus'), 'succeeded'), equals(variables('vAnalyzerStatus'), 'failed'))",
+              "limit": {
+                "count": 120,
+                "timeout": "PT1H"
+              },
+              "type": "Until",
+              "description": "Poll Content Understanding every 15 seconds until analysis succeeds or fails."
+            },
+            "Condition_Analysis_Failed": {
+              "actions": {
+                "Terminate_Failed": {
+                  "type": "Terminate",
+                  "inputs": {
+                    "runStatus": "Failed",
+                    "runError": {
+                      "code": "AnalysisFailed",
+                      "message": "Content Understanding analysis failed for @{variables('vBlobName')}"
+                    }
+                  },
+                  "description": "Terminate workflow if Content Understanding analysis failed."
+                }
+              },
+              "runAfter": {
+                "Until_succeeded": [ "Succeeded" ]
+              },
+              "else": {
+                "actions": {}
+              },
+              "expression": {
+                "or": [
+                  {
+                    "equals": [
+                      "@variables('vAnalyzerStatus')",
+                      "failed"
+                    ]
+                  }
+                ]
+              },
+              "type": "If",
+              "description": "Check if analysis failed."
+            },
+            "Parse_Call_Result_JSON": {
+              "runAfter": {
+                "Condition_Analysis_Failed": [ "Succeeded" ]
+              },
+              "type": "ParseJson",
+              "inputs": {
+                "content": "@body('Check_Status')",
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": { "type": "string" },
+                    "status": { "type": "string" },
+                    "result": {
+                      "type": "object",
+                      "properties": {
+                        "analyzerId": { "type": "string" },
+                        "apiVersion": { "type": "string" },
+                        "createdAt": { "type": "string" },
+                        "warnings": { "type": "array" },
+                        "contents": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "markdown": { "type": "string" },
+                              "fields": {
+                                "type": "object",
+                                "properties": {
+                                  "Summary": {
+                                    "type": "object",
+                                    "properties": {
+                                      "type": { "type": "string" },
+                                      "valueString": { "type": "string" }
+                                    }
+                                  }
+                                }
+                              },
+                              "kind": { "type": "string" },
+                              "startTimeMs": { "type": "integer" },
+                              "endTimeMs": { "type": "integer" },
+                              "width": { "type": "integer" },
+                              "height": { "type": "integer" },
+                              "KeyFrameTimesMs": {
+                                "type": "array",
+                                "items": { "type": "integer" }
+                              },
+                              "transcriptPhrases": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "speaker": { "type": "string" },
+                                    "startTimeMs": { "type": "integer" },
+                                    "endTimeMs": { "type": "integer" },
+                                    "text": { "type": "string" },
+                                    "confidence": { "type": "number" },
+                                    "words": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "startTimeMs": { "type": "integer" },
+                                          "endTimeMs": { "type": "integer" },
+                                          "text": { "type": "string" }
+                                        }
+                                      }
+                                    },
+                                    "locale": { "type": "string" }
+                                  }
+                                }
+                              },
+                              "cameraShotTimesMs": {
+                                "type": "array",
+                                "items": { "type": "integer" }
+                              },
+                              "mimeType": { "type": "string" }
+                            }
+                          }
+                        }
+                      }
+                    },
+                    "usage": {
+                      "type": "object",
+                      "properties": {
+                        "videoHours": { "type": "number" },
+                        "contextualizationTokens": { "type": "integer" },
+                        "tokens": {
+                          "type": "object",
+                          "properties": {
+                            "gpt-4.1-mini-input": { "type": "integer" },
+                            "gpt-4.1-mini-output": { "type": "integer" }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              },
+              "description": "Parse the final Content Understanding result with full schema."
+            },
+            "varContentText": {
+              "runAfter": {
+                "Parse_Call_Result_JSON": [ "Succeeded" ]
+              },
+              "type": "InitializeVariable",
+              "inputs": {
+                "variables": [
+                  {
+                    "name": "vTranscriptText",
+                    "type": "string",
+                    "value": ""
+                  },
+                  {
+                    "name": "vSummaryText",
+                    "type": "string",
+                    "value": ""
+                  }
+                ]
+              },
+              "description": "Initialize variables to accumulate transcript and summary text from video segments."
+            },
+            "For_each_content": {
+              "foreach": "@body('Parse_Call_Result_JSON')?['result']?['contents']",
+              "actions": {
+                "Append_Summary": {
+                  "type": "AppendToStringVariable",
+                  "inputs": {
+                    "name": "vSummaryText",
+                    "value": "@{if(equals(items('For_each_content')?['fields']?['Summary']?['valueString'], null), '', concat(items('For_each_content')?['fields']?['Summary']?['valueString'], ' '))}"
+                  },
+                  "description": "Append AI-generated summary for this video segment."
+                },
+                "Select_Phrases": {
+                  "runAfter": {
+                    "Append_Summary": [ "Succeeded" ]
+                  },
+                  "type": "Select",
+                  "inputs": {
+                    "from": "@if(equals(items('For_each_content')?['transcriptPhrases'], null), json('[]'), items('For_each_content')?['transcriptPhrases'])",
+                    "select": "@item()?['text']"
+                  },
+                  "description": "Extract text from each transcript phrase."
+                },
+                "Append_Transcript": {
+                  "runAfter": {
+                    "Select_Phrases": [ "Succeeded" ]
+                  },
+                  "type": "AppendToStringVariable",
+                  "inputs": {
+                    "name": "vTranscriptText",
+                    "value": "@{join(body('Select_Phrases'), ' ')} "
+                  },
+                  "description": "Join transcript phrases and append to full transcript."
+                }
+              },
+              "runAfter": {
+                "varContentText": [ "Succeeded" ]
+              },
+              "type": "Foreach",
+              "description": "Iterate through each content segment to extract transcripts and summaries."
+            },
+            "Condition_Has_Content": {
+              "actions": {
+                "Compose_Search_Content": {
+                  "type": "Compose",
+                  "inputs": "@take(concat(trim(variables('vSummaryText')), ' ', trim(variables('vTranscriptText'))), 8000)",
+                  "description": "Combine summary and transcript, limited to 8000 characters."
+                },
+                "Generate_Embedding": {
+                  "runAfter": {
+                    "Compose_Search_Content": [ "Succeeded" ]
+                  },
+                  "type": "Http",
+                  "inputs": {
+                    "uri": "[concat('https://', variables('openAiName'), '.openai.azure.com/openai/deployments/', variables('embeddingDeploymentName'), '/embeddings?api-version=2024-06-01')]",
+                    "method": "POST",
+                    "headers": {
+                      "Content-Type": "application/json"
+                    },
+                    "body": {
+                      "input": "@{outputs('Compose_Search_Content')}"
+                    },
+                    "authentication": {
+                      "type": "ManagedServiceIdentity",
+                      "audience": "https://cognitiveservices.azure.com"
+                    },
+                    "retryPolicy": {
+                      "type": "exponential",
+                      "count": 3,
+                      "interval": "PT5S"
+                    }
+                  },
+                  "description": "Generate vector embedding using Azure OpenAI text-embedding-3-large.",
+                  "runtimeConfiguration": {
+                    "contentTransfer": {
+                      "transferMode": "Chunked"
+                    }
+                  }
+                },
+                "Get_Search_Key": {
+                  "runAfter": {
+                    "Generate_Embedding": [ "Succeeded" ]
+                  },
+                  "type": "Http",
+                  "inputs": {
+                    "uri": "[concat('https://', variables('keyVaultName'), '.vault.azure.net/secrets/', variables('searchAdminKeySecretName'), '?api-version=7.4')]",
+                    "method": "GET",
+                    "authentication": {
+                      "type": "ManagedServiceIdentity",
+                      "audience": "https://vault.azure.net"
+                    }
+                  },
+                  "description": "Retrieve AI Search admin key from Key Vault using managed identity.",
+                  "runtimeConfiguration": {
+                    "secureData": {
+                      "properties": [ "outputs" ]
+                    }
+                  }
+                },
+                "Push_To_AI_Search": {
+                  "runAfter": {
+                    "Get_Search_Key": [ "Succeeded" ]
+                  },
+                  "type": "Http",
+                  "inputs": {
+                    "uri": "[concat('https://', variables('searchServiceName'), '.search.windows.net/indexes/', variables('searchIndexName'), '/docs/index?api-version=2024-07-01')]",
+                    "method": "POST",
+                    "headers": {
+                      "Content-Type": "application/json",
+                      "api-key": "@{body('Get_Search_Key')?['value']}"
+                    },
+                    "body": {
+                      "value": [
+                        {
+                          "@@search.action": "mergeOrUpload",
+                          "id": "@{variables('vDocumentId')}",
+                          "title": "@{variables('vBlobName')}",
+                          "sourceUrl": "@{variables('vBlobUrl')}",
+                          "type": "training-video",
+                          "summary": "@{trim(variables('vSummaryText'))}",
+                          "content": "@{trim(variables('vTranscriptText'))}",
+                          "createdAt": "@{utcNow()}",
+                          "contentVector": "@body('Generate_Embedding')?['data'][0]['embedding']"
+                        }
+                      ]
+                    },
+                    "retryPolicy": {
+                      "type": "exponential",
+                      "count": 3,
+                      "interval": "PT5S"
+                    }
+                  },
+                  "description": "Push document with vector embedding to AI Search.",
+                  "runtimeConfiguration": {
+                    "contentTransfer": {
+                      "transferMode": "Chunked"
+                    }
+                  }
+                }
+              },
+              "runAfter": {
+                "For_each_content": [ "Succeeded" ]
+              },
+              "else": {
+                "actions": {
+                  "Terminate_No_Content": {
+                    "type": "Terminate",
+                    "inputs": {
+                      "runStatus": "Failed",
+                      "runError": {
+                        "code": "NoContent",
+                        "message": "No transcript content extracted from @{variables('vBlobName')}"
+                      }
+                    },
+                    "description": "Terminate if no transcript content was extracted."
+                  }
+                }
+              },
+              "expression": {
+                "and": [
+                  {
+                    "greater": [
+                      "@length(trim(variables('vTranscriptText')))",
+                      0
+                    ]
+                  }
+                ]
+              },
+              "type": "If",
+              "description": "Check if transcript content was extracted before generating embeddings."
+            }
+          },
+          "outputs": {},
+          "parameters": {
+            "$connections": {
+              "type": "Object",
+              "defaultValue": {}
+            }
+          }
+        },
+        "parameters": {
+          "$connections": {
+            "value": {
+              "azureeventgrid-1": {
+                "id": "[subscriptionResourceId('Microsoft.Web/locations/managedApis', parameters('location'), 'azureeventgrid')]",
+                "connectionId": "[resourceId('Microsoft.Web/connections', variables('eventGridConnectionName'))]",
+                "connectionName": "[variables('eventGridConnectionName')]"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "type": "Microsoft.Storage/storageAccounts/providers/roleAssignments",
+      "apiVersion": "2022-04-01",
+      "name": "[concat(variables('storageAccountName'), '/Microsoft.Authorization/', guid(resourceGroup().id, variables('storageBlobDataReaderRoleId'), variables('logicAppName')))]",
+      "dependsOn": [
+        "[resourceId('Microsoft.Storage/storageAccounts', variables('storageAccountName'))]",
+        "[resourceId('Microsoft.Logic/workflows', variables('logicAppName'))]"
+      ],
+      "properties": {
+        "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', variables('storageBlobDataReaderRoleId'))]",
+        "principalId": "[reference(resourceId('Microsoft.Logic/workflows', variables('logicAppName')), '2019-05-01', 'Full').identity.principalId]",
+        "principalType": "ServicePrincipal"
+      }
+    },
+    {
+      "type": "Microsoft.Storage/storageAccounts/providers/roleAssignments",
+      "apiVersion": "2022-04-01",
+      "name": "[concat(variables('storageAccountName'), '/Microsoft.Authorization/', guid(resourceGroup().id, variables('storageBlobDataReaderRoleId'), variables('aiServicesName')))]",
+      "dependsOn": [
+        "[resourceId('Microsoft.Storage/storageAccounts', variables('storageAccountName'))]",
+        "[resourceId('Microsoft.CognitiveServices/accounts', variables('aiServicesName'))]"
+      ],
+      "properties": {
+        "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', variables('storageBlobDataReaderRoleId'))]",
+        "principalId": "[reference(resourceId('Microsoft.CognitiveServices/accounts', variables('aiServicesName')), '2024-10-01', 'Full').identity.principalId]",
+        "principalType": "ServicePrincipal"
+      }
+    },
+    {
+      "type": "Microsoft.Storage/storageAccounts/providers/roleAssignments",
+      "apiVersion": "2022-04-01",
+      "name": "[concat(variables('storageAccountName'), '/Microsoft.Authorization/', guid(resourceGroup().id, variables('eventGridContributorRoleId'), variables('logicAppName')))]",
+      "dependsOn": [
+        "[resourceId('Microsoft.Storage/storageAccounts', variables('storageAccountName'))]",
+        "[resourceId('Microsoft.Logic/workflows', variables('logicAppName'))]"
+      ],
+      "properties": {
+        "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', variables('eventGridContributorRoleId'))]",
+        "principalId": "[reference(resourceId('Microsoft.Logic/workflows', variables('logicAppName')), '2019-05-01', 'Full').identity.principalId]",
+        "principalType": "ServicePrincipal"
+      }
+    },
+    {
+      "type": "Microsoft.Storage/storageAccounts/providers/roleAssignments",
+      "apiVersion": "2022-04-01",
+      "name": "[concat(variables('storageAccountName'), '/Microsoft.Authorization/', guid(resourceGroup().id, variables('storageAccountContributorRoleId'), variables('logicAppName')))]",
+      "dependsOn": [
+        "[resourceId('Microsoft.Storage/storageAccounts', variables('storageAccountName'))]",
+        "[resourceId('Microsoft.Logic/workflows', variables('logicAppName'))]"
+      ],
+      "properties": {
+        "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', variables('storageAccountContributorRoleId'))]",
+        "principalId": "[reference(resourceId('Microsoft.Logic/workflows', variables('logicAppName')), '2019-05-01', 'Full').identity.principalId]",
+        "principalType": "ServicePrincipal"
+      }
+    },
+    {
+      "type": "Microsoft.CognitiveServices/accounts/providers/roleAssignments",
+      "apiVersion": "2022-04-01",
+      "name": "[concat(variables('aiServicesName'), '/Microsoft.Authorization/', guid(resourceGroup().id, variables('cognitiveServicesUserRoleId'), variables('logicAppName')))]",
+      "dependsOn": [
+        "[resourceId('Microsoft.CognitiveServices/accounts', variables('aiServicesName'))]",
+        "[resourceId('Microsoft.Logic/workflows', variables('logicAppName'))]"
+      ],
+      "properties": {
+        "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', variables('cognitiveServicesUserRoleId'))]",
+        "principalId": "[reference(resourceId('Microsoft.Logic/workflows', variables('logicAppName')), '2019-05-01', 'Full').identity.principalId]",
+        "principalType": "ServicePrincipal"
+      }
+    },
+    {
+      "type": "Microsoft.CognitiveServices/accounts/providers/roleAssignments",
+      "apiVersion": "2022-04-01",
+      "name": "[concat(variables('openAiName'), '/Microsoft.Authorization/', guid(resourceGroup().id, variables('cognitiveServicesOpenAIUserRoleId'), variables('logicAppName')))]",
+      "dependsOn": [
+        "[resourceId('Microsoft.CognitiveServices/accounts', variables('openAiName'))]",
+        "[resourceId('Microsoft.Logic/workflows', variables('logicAppName'))]"
+      ],
+      "properties": {
+        "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', variables('cognitiveServicesOpenAIUserRoleId'))]",
+        "principalId": "[reference(resourceId('Microsoft.Logic/workflows', variables('logicAppName')), '2019-05-01', 'Full').identity.principalId]",
+        "principalType": "ServicePrincipal"
+      }
+    },
+    {
+      "type": "Microsoft.KeyVault/vaults/providers/roleAssignments",
+      "apiVersion": "2022-04-01",
+      "name": "[concat(variables('keyVaultName'), '/Microsoft.Authorization/', guid(resourceGroup().id, variables('keyVaultSecretsUserRoleId'), variables('logicAppName')))]",
+      "dependsOn": [
+        "[resourceId('Microsoft.KeyVault/vaults', variables('keyVaultName'))]",
+        "[resourceId('Microsoft.Logic/workflows', variables('logicAppName'))]"
+      ],
+      "properties": {
+        "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', variables('keyVaultSecretsUserRoleId'))]",
+        "principalId": "[reference(resourceId('Microsoft.Logic/workflows', variables('logicAppName')), '2019-05-01', 'Full').identity.principalId]",
+        "principalType": "ServicePrincipal"
+      }
+    }
+  ],
+  "outputs": {
+    "storageAccountName": {
+      "type": "string",
+      "value": "[variables('storageAccountName')]"
+    },
+    "storageContainerName": {
+      "type": "string",
+      "value": "[variables('containerName')]"
+    },
+    "aiServicesName": {
+      "type": "string",
+      "value": "[variables('aiServicesName')]"
+    },
+    "aiServicesEndpoint": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.CognitiveServices/accounts', variables('aiServicesName'))).endpoint]"
+    },
+    "openAiName": {
+      "type": "string",
+      "value": "[variables('openAiName')]"
+    },
+    "openAiEndpoint": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.CognitiveServices/accounts', variables('openAiName'))).endpoint]"
+    },
+    "searchServiceName": {
+      "type": "string",
+      "value": "[variables('searchServiceName')]"
+    },
+    "searchIndexName": {
+      "type": "string",
+      "value": "[variables('searchIndexName')]"
+    },
+    "logicAppName": {
+      "type": "string",
+      "value": "[variables('logicAppName')]"
+    },
+    "logicAppManagedIdentityPrincipalId": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.Logic/workflows', variables('logicAppName')), '2019-05-01', 'Full').identity.principalId]"
+    },
+    "foundryHubName": {
+      "type": "string",
+      "value": "[variables('foundryHubName')]"
+    },
+    "foundryProjectName": {
+      "type": "string",
+      "value": "[variables('foundryProjectName')]"
+    },
+    "keyVaultName": {
+      "type": "string",
+      "value": "[variables('keyVaultName')]"
+    }
+  }
+}

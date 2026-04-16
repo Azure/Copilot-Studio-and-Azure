@@ -8,9 +8,35 @@ The same pattern can be used as a starting point for your own connector. The doc
 
 ---
 
+## Solution Architecture
+
+![SharePoint Connector Architecture](images/sharepoint-connector-architecture.png)
+
+> The draw.io source is available at [`images/sharepoint-connector-architecture.drawio`](images/sharepoint-connector-architecture.drawio).
+
+---
+
+## Deploy to Azure
+
+Infrastructure deployment (Function App, Storage, App Insights, RBAC) can be done with one click. You will need **Azure AI Search** and **Azure OpenAI** already provisioned — the template assigns RBAC roles to them but does not create them.
+
+[![Deploy to Azure](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2FAzure%2FCopilot-Studio-and-Azure%2Fmain%2Faccelerators%2Fsharepoint-connector%2Fdeploy%2Fazuredeploy.json)
+
+After infrastructure is deployed, you still need to:
+
+1. **Deploy the function code** — `func azure functionapp publish <function-app-name> --python`
+2. **Grant Graph API permissions** — See [Step 5](#step-5-grant-graph-api-permissions-one-time)
+3. **Wait for RBAC propagation** — 2–10 minutes
+
+> If you prefer the full scripted deployment (infrastructure + code in one command), use [`infra/deploy.ps1`](infra/deploy.ps1) instead.
+
+---
+
 ## Table of Contents
 
 - [SharePoint → Azure AI Search Connector](#sharepoint--azure-ai-search-connector)
+  - [Solution Architecture](#solution-architecture)
+  - [Deploy to Azure](#deploy-to-azure)
   - [Table of Contents](#table-of-contents)
   - [How the Pipeline Works](#how-the-pipeline-works)
   - [Project Structure](#project-structure)
