@@ -1,0 +1,249 @@
+<mxfile host="app.diagrams.net" modified="2026-04-15T00:00:00.000Z" agent="Claude Code" version="24.0.0" type="device">
+  <diagram id="sp-connector-arch" name="SharePoint Connector Architecture">
+    <mxGraphModel dx="1522" dy="894" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1700" pageHeight="1000" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <!-- Title -->
+        <mxCell id="title" value="SharePoint → Azure AI Search Connector — Solution Architecture" style="text;html=1;fontSize=22;fontStyle=1;align=center;verticalAlign=middle;whiteSpace=wrap;fillColor=none;strokeColor=none;fontColor=#333333;" vertex="1" parent="1">
+          <mxGeometry x="400" y="15" width="700" height="40" as="geometry" />
+        </mxCell>
+
+        <!-- Swim lane: Ingestion Flow -->
+        <mxCell id="lane1" value="Ingestion Pipeline  (Timer-triggered, runs every hour)" style="text;html=1;fontSize=13;fontStyle=3;align=left;verticalAlign=middle;fillColor=#E6F0FF;strokeColor=#0078D4;rounded=1;arcSize=20;fontColor=#0078D4;spacingLeft=10;" vertex="1" parent="1">
+          <mxGeometry x="60" y="70" width="1580" height="30" as="geometry" />
+        </mxCell>
+
+        <!-- Swim lane: Retrieval Flow -->
+        <mxCell id="lane2" value="Retrieval Flow  (Copilot Studio queries the search index)" style="text;html=1;fontSize=13;fontStyle=3;align=left;verticalAlign=middle;fillColor=#F3E6F3;strokeColor=#742774;rounded=1;arcSize=20;fontColor=#742774;spacingLeft=10;" vertex="1" parent="1">
+          <mxGeometry x="60" y="700" width="1580" height="30" as="geometry" />
+        </mxCell>
+
+        <!-- ========== SOURCE: SharePoint Online ========== -->
+        <mxCell id="sharepoint" value="SharePoint Online&#xa;&#xa;Document Libraries&#xa;(Word, PDF, Excel,&#xa;PowerPoint, 25+ formats)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#217346;fontColor=#FFFFFF;strokeColor=none;fontSize=11;fontStyle=1;arcSize=10;verticalAlign=middle;align=center;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="80" y="160" width="200" height="120" as="geometry" />
+        </mxCell>
+
+        <!-- Microsoft Graph API -->
+        <mxCell id="graphapi" value="Microsoft Graph API&#xa;&#xa;Sites.Read.All&#xa;Files.Read.All" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#0078D4;fontColor=#FFFFFF;strokeColor=none;fontSize=11;fontStyle=1;arcSize=10;verticalAlign=middle;align=center;" vertex="1" parent="1">
+          <mxGeometry x="80" y="360" width="200" height="90" as="geometry" />
+        </mxCell>
+
+        <!-- ========== CENTRAL: Azure Function App ========== -->
+        <mxCell id="functionapp" value="Azure Function App&#xa;(Flex Consumption — Python 3.11)&#xa;&#xa;System-Assigned Managed Identity&#xa;&#xa;Timer Trigger (CRON)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#0078D4;fontColor=#FFFFFF;strokeColor=#005A9E;strokeWidth=3;fontSize=12;fontStyle=1;arcSize=10;verticalAlign=middle;align=center;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="430" y="140" width="260" height="140" as="geometry" />
+        </mxCell>
+
+        <!-- Internal pipeline steps inside Function App area -->
+        <mxCell id="pipeline_bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F0F6FF;strokeColor=#0078D4;strokeWidth=1;dashed=1;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="390" y="310" width="340" height="310" as="geometry" />
+        </mxCell>
+        <mxCell id="pipeline_title" value="Processing Pipeline (per file)" style="text;html=1;fontSize=11;fontStyle=3;align=center;verticalAlign=middle;fillColor=none;strokeColor=none;fontColor=#0078D4;" vertex="1" parent="1">
+          <mxGeometry x="430" y="315" width="260" height="25" as="geometry" />
+        </mxCell>
+
+        <mxCell id="step_discover" value="1. Discover Files&#xa;(Graph API query)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#CCE0FF;fontColor=#003366;strokeColor=#0078D4;fontSize=10;fontStyle=0;arcSize=15;verticalAlign=middle;align=center;" vertex="1" parent="1">
+          <mxGeometry x="410" y="350" width="140" height="45" as="geometry" />
+        </mxCell>
+
+        <mxCell id="step_download" value="2. Download File&#xa;(Graph API)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#CCE0FF;fontColor=#003366;strokeColor=#0078D4;fontSize=10;fontStyle=0;arcSize=15;verticalAlign=middle;align=center;" vertex="1" parent="1">
+          <mxGeometry x="570" y="350" width="140" height="45" as="geometry" />
+        </mxCell>
+
+        <mxCell id="step_extract" value="3. Extract Text&#xa;(25+ format extractors)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#CCE0FF;fontColor=#003366;strokeColor=#0078D4;fontSize=10;fontStyle=0;arcSize=15;verticalAlign=middle;align=center;" vertex="1" parent="1">
+          <mxGeometry x="410" y="410" width="140" height="45" as="geometry" />
+        </mxCell>
+
+        <mxCell id="step_chunk" value="4. Chunk Text&#xa;(overlap + boundaries)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#CCE0FF;fontColor=#003366;strokeColor=#0078D4;fontSize=10;fontStyle=0;arcSize=15;verticalAlign=middle;align=center;" vertex="1" parent="1">
+          <mxGeometry x="570" y="410" width="140" height="45" as="geometry" />
+        </mxCell>
+
+        <mxCell id="step_embed" value="5. Generate Embeddings&#xa;(Azure OpenAI)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFE0B2;fontColor=#663300;strokeColor=#FF8C00;fontSize=10;fontStyle=0;arcSize=15;verticalAlign=middle;align=center;" vertex="1" parent="1">
+          <mxGeometry x="410" y="470" width="140" height="45" as="geometry" />
+        </mxCell>
+
+        <mxCell id="step_push" value="6. Push to Index&#xa;(chunks + vectors)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#CCE0FF;fontColor=#003366;strokeColor=#0063B1;fontSize=10;fontStyle=0;arcSize=15;verticalAlign=middle;align=center;" vertex="1" parent="1">
+          <mxGeometry x="570" y="470" width="140" height="45" as="geometry" />
+        </mxCell>
+
+        <mxCell id="step_reconcile" value="7. Reconcile Orphans&#xa;(full reindex only)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E8E8E8;fontColor=#444444;strokeColor=#999999;fontSize=10;fontStyle=2;arcSize=15;verticalAlign=middle;align=center;" vertex="1" parent="1">
+          <mxGeometry x="480" y="530" width="160" height="45" as="geometry" />
+        </mxCell>
+
+        <!-- Pipeline step arrows -->
+        <mxCell id="p1" style="edgeStyle=orthogonalEdgeStyle;rounded=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;strokeColor=#0078D4;strokeWidth=1;" edge="1" source="step_discover" target="step_download" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p2" style="edgeStyle=orthogonalEdgeStyle;rounded=1;exitX=0;exitY=0.5;entryX=0;entryY=0.5;strokeColor=#0078D4;strokeWidth=1;" edge="1" source="step_download" target="step_extract" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points"><mxPoint x="730" y="373" /><mxPoint x="730" y="398" /><mxPoint x="395" y="398" /><mxPoint x="395" y="433" /></Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="p3" style="edgeStyle=orthogonalEdgeStyle;rounded=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;strokeColor=#0078D4;strokeWidth=1;" edge="1" source="step_extract" target="step_chunk" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p4" style="edgeStyle=orthogonalEdgeStyle;rounded=1;exitX=0;exitY=0.5;entryX=0;entryY=0.5;strokeColor=#FF8C00;strokeWidth=1;" edge="1" source="step_chunk" target="step_embed" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points"><mxPoint x="730" y="433" /><mxPoint x="730" y="458" /><mxPoint x="395" y="458" /><mxPoint x="395" y="493" /></Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="p5" style="edgeStyle=orthogonalEdgeStyle;rounded=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;strokeColor=#0063B1;strokeWidth=1;" edge="1" source="step_embed" target="step_push" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p6" style="edgeStyle=orthogonalEdgeStyle;rounded=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;strokeColor=#999999;strokeWidth=1;dashed=1;" edge="1" source="step_push" target="step_reconcile" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- ========== Azure OpenAI ========== -->
+        <mxCell id="openai" value="Azure OpenAI / Foundry&#xa;&#xa;text-embedding-3-large&#xa;(1536 dimensions)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FF8C00;fontColor=#FFFFFF;strokeColor=none;fontSize=11;fontStyle=1;arcSize=10;verticalAlign=middle;align=center;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="870" y="340" width="200" height="100" as="geometry" />
+        </mxCell>
+
+        <!-- ========== Azure AI Search ========== -->
+        <mxCell id="aisearch" value="Azure AI Search&#xa;&#xa;sharepoint-index&#xa;(HNSW Vector + Full-text)&#xa;&#xa;Security Trimming&#xa;via permission_ids" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#0063B1;fontColor=#FFFFFF;strokeColor=none;fontSize=11;fontStyle=1;arcSize=10;verticalAlign=middle;align=center;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="870" y="490" width="200" height="130" as="geometry" />
+        </mxCell>
+
+        <!-- ========== Supporting Services ========== -->
+        <!-- Storage Account -->
+        <mxCell id="storage" value="Azure Storage&#xa;&#xa;(Function runtime&#xa;+ deployment packages)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#0078D4;fontColor=#FFFFFF;strokeColor=none;fontSize=10;fontStyle=1;arcSize=10;verticalAlign=middle;align=center;" vertex="1" parent="1">
+          <mxGeometry x="870" y="150" width="170" height="80" as="geometry" />
+        </mxCell>
+
+        <!-- App Insights -->
+        <mxCell id="appinsights" value="Application Insights&#xa;+ Log Analytics&#xa;&#xa;(Monitoring &amp; Logs)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#68217A;fontColor=#FFFFFF;strokeColor=none;fontSize=10;fontStyle=1;arcSize=10;verticalAlign=middle;align=center;" vertex="1" parent="1">
+          <mxGeometry x="1080" y="150" width="170" height="80" as="geometry" />
+        </mxCell>
+
+        <!-- ========== RBAC Annotations ========== -->
+        <mxCell id="rbac_box" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF9E6;strokeColor=#D4A017;strokeWidth=1;dashed=1;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="1300" y="110" width="290" height="260" as="geometry" />
+        </mxCell>
+        <mxCell id="rbac_title" value="RBAC Role Assignments&#xa;(Managed Identity → Services)" style="text;html=1;fontSize=11;fontStyle=3;align=center;verticalAlign=middle;fillColor=none;strokeColor=none;fontColor=#D4A017;" vertex="1" parent="1">
+          <mxGeometry x="1310" y="115" width="270" height="35" as="geometry" />
+        </mxCell>
+        <mxCell id="rbac_search" value="🔍 Azure AI Search&#xa;  • Search Index Data Contributor&#xa;  • Search Service Contributor" style="text;html=1;fontSize=10;fontStyle=0;align=left;verticalAlign=top;fillColor=none;strokeColor=none;fontColor=#333333;spacingLeft=5;" vertex="1" parent="1">
+          <mxGeometry x="1310" y="155" width="270" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="rbac_openai" value="🧠 Azure OpenAI&#xa;  • Cognitive Services OpenAI User" style="text;html=1;fontSize=10;fontStyle=0;align=left;verticalAlign=top;fillColor=none;strokeColor=none;fontColor=#333333;spacingLeft=5;" vertex="1" parent="1">
+          <mxGeometry x="1310" y="205" width="270" height="35" as="geometry" />
+        </mxCell>
+        <mxCell id="rbac_storage" value="📦 Azure Storage&#xa;  • Blob Data Owner&#xa;  • Account Contributor&#xa;  • Queue Data Contributor" style="text;html=1;fontSize=10;fontStyle=0;align=left;verticalAlign=top;fillColor=none;strokeColor=none;fontColor=#333333;spacingLeft=5;" vertex="1" parent="1">
+          <mxGeometry x="1310" y="245" width="270" height="55" as="geometry" />
+        </mxCell>
+        <mxCell id="rbac_graph" value="📧 Microsoft Graph (manual step)&#xa;  • Sites.Read.All&#xa;  • Files.Read.All" style="text;html=1;fontSize=10;fontStyle=0;align=left;verticalAlign=top;fillColor=none;strokeColor=none;fontColor=#333333;spacingLeft=5;" vertex="1" parent="1">
+          <mxGeometry x="1310" y="310" width="270" height="45" as="geometry" />
+        </mxCell>
+
+        <!-- ========== RETRIEVAL: Copilot Studio ========== -->
+        <mxCell id="copilot" value="Microsoft&#xa;Copilot Studio&#xa;&#xa;(Agent + AI Search&#xa;Knowledge Base)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#742774;fontColor=#FFFFFF;strokeColor=none;fontSize=12;fontStyle=1;arcSize=10;verticalAlign=middle;align=center;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="530" y="760" width="200" height="120" as="geometry" />
+        </mxCell>
+
+        <!-- End User -->
+        <mxCell id="enduser" value="End User" style="shape=mxgraph.azure.user;fillColor=#742774;fontColor=#FFFFFF;strokeColor=none;fontSize=12;fontStyle=1;verticalLabelPosition=bottom;verticalAlign=top;align=center;" vertex="1" parent="1">
+          <mxGeometry x="160" y="795" width="50" height="50" as="geometry" />
+        </mxCell>
+
+        <!-- ========== MAIN FLOW ARROWS ========== -->
+
+        <!-- Timer fires → Function App (internal) -->
+        <mxCell id="e_timer" value="Timer fires&#xa;(CRON: hourly)" style="text;html=1;fontSize=10;fontStyle=2;align=center;verticalAlign=middle;fillColor=none;strokeColor=none;fontColor=#0078D4;" vertex="1" parent="1">
+          <mxGeometry x="440" y="280" width="120" height="30" as="geometry" />
+        </mxCell>
+
+        <!-- Function App → Graph API (list + download files) -->
+        <mxCell id="e1" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;exitX=0;exitY=0.7;entryX=0.5;entryY=0;strokeColor=#0078D4;strokeWidth=2;" edge="1" source="functionapp" target="graphapi" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points"><mxPoint x="370" y="238" /><mxPoint x="370" y="330" /><mxPoint x="180" y="330" /></Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e1label" value="List &amp; Download&#xa;Files" style="edgeLabel;html=1;align=center;verticalAlign=middle;fontSize=10;fontColor=#0078D4;fontStyle=1;" vertex="1" connectable="0" parent="e1">
+          <mxGeometry x="-0.2" relative="1" as="geometry"><mxPoint x="-30" as="offset" /></mxGeometry>
+        </mxCell>
+
+        <!-- Graph API → SharePoint -->
+        <mxCell id="e2" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;exitX=0.5;exitY=0;entryX=0.5;entryY=1;strokeColor=#217346;strokeWidth=2;" edge="1" source="graphapi" target="sharepoint" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e2label" value="Read Files &amp;&#xa;Permissions" style="edgeLabel;html=1;align=center;verticalAlign=middle;fontSize=10;fontColor=#217346;fontStyle=1;" vertex="1" connectable="0" parent="e2">
+          <mxGeometry x="-0.1" relative="1" as="geometry"><mxPoint x="55" as="offset" /></mxGeometry>
+        </mxCell>
+
+        <!-- Function App → Azure OpenAI (embeddings) -->
+        <mxCell id="e3" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;exitX=1;exitY=0.5;entryX=0;entryY=0.5;strokeColor=#FF8C00;strokeWidth=2;" edge="1" source="step_embed" target="openai" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points"><mxPoint x="830" y="493" /><mxPoint x="830" y="390" /></Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e3label" value="Generate&#xa;Embeddings" style="edgeLabel;html=1;align=center;verticalAlign=middle;fontSize=10;fontColor=#FF8C00;fontStyle=1;" vertex="1" connectable="0" parent="e3">
+          <mxGeometry x="-0.3" relative="1" as="geometry"><mxPoint x="10" as="offset" /></mxGeometry>
+        </mxCell>
+
+        <!-- Function App → AI Search (push) -->
+        <mxCell id="e4" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;exitX=1;exitY=0.5;entryX=0;entryY=0.5;strokeColor=#0063B1;strokeWidth=2;" edge="1" source="step_push" target="aisearch" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points"><mxPoint x="840" y="493" /><mxPoint x="840" y="555" /></Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e4label" value="Push Chunks&#xa;+ Vectors&#xa;+ Permissions" style="edgeLabel;html=1;align=center;verticalAlign=middle;fontSize=10;fontColor=#0063B1;fontStyle=1;" vertex="1" connectable="0" parent="e4">
+          <mxGeometry x="-0.2" relative="1" as="geometry"><mxPoint x="10" as="offset" /></mxGeometry>
+        </mxCell>
+
+        <!-- Function App → Storage -->
+        <mxCell id="e5" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;exitX=1;exitY=0.3;entryX=0;entryY=0.5;strokeColor=#0078D4;strokeWidth=1;dashed=1;" edge="1" source="functionapp" target="storage" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e5label" value="Runtime" style="edgeLabel;html=1;align=center;verticalAlign=bottom;fontSize=9;fontColor=#0078D4;fontStyle=2;" vertex="1" connectable="0" parent="e5">
+          <mxGeometry x="-0.1" relative="1" as="geometry"><mxPoint y="-8" as="offset" /></mxGeometry>
+        </mxCell>
+
+        <!-- Function App → App Insights -->
+        <mxCell id="e6" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;exitX=1;exitY=0.15;entryX=0;entryY=0.5;strokeColor=#68217A;strokeWidth=1;dashed=1;" edge="1" source="functionapp" target="appinsights" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points"><mxPoint x="760" y="161" /><mxPoint x="760" y="190" /></Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e6label" value="Logs &amp; Metrics" style="edgeLabel;html=1;align=center;verticalAlign=bottom;fontSize=9;fontColor=#68217A;fontStyle=2;" vertex="1" connectable="0" parent="e6">
+          <mxGeometry x="-0.1" relative="1" as="geometry"><mxPoint y="-8" as="offset" /></mxGeometry>
+        </mxCell>
+
+        <!-- Copilot Studio → AI Search (query) -->
+        <mxCell id="e7" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;exitX=1;exitY=0.3;entryX=0.5;entryY=1;strokeColor=#742774;strokeWidth=2;" edge="1" source="copilot" target="aisearch" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points"><mxPoint x="970" y="796" /><mxPoint x="970" y="620" /></Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e7label" value="Hybrid Query&#xa;(Vector + Keyword&#xa;+ Security Filter)" style="edgeLabel;html=1;align=center;verticalAlign=middle;fontSize=10;fontColor=#742774;fontStyle=1;" vertex="1" connectable="0" parent="e7">
+          <mxGeometry x="0.3" relative="1" as="geometry"><mxPoint x="15" as="offset" /></mxGeometry>
+        </mxCell>
+
+        <!-- End User → Copilot Studio -->
+        <mxCell id="e8" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;exitX=1;exitY=0.5;entryX=0;entryY=0.5;strokeColor=#742774;strokeWidth=2;" edge="1" source="enduser" target="copilot" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e8label" value="Ask Questions" style="edgeLabel;html=1;align=center;verticalAlign=bottom;fontSize=10;fontColor=#742774;fontStyle=1;" vertex="1" connectable="0" parent="e8">
+          <mxGeometry x="-0.1" relative="1" as="geometry"><mxPoint y="-10" as="offset" /></mxGeometry>
+        </mxCell>
+
+        <!-- ========== DESIGN DECISION CALLOUTS ========== -->
+        <mxCell id="callout_box" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F0FFF0;strokeColor=#217346;strokeWidth=1;dashed=1;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="1300" y="400" width="290" height="220" as="geometry" />
+        </mxCell>
+        <mxCell id="callout_title" value="Key Design Decisions" style="text;html=1;fontSize=11;fontStyle=3;align=center;verticalAlign=middle;fillColor=none;strokeColor=none;fontColor=#217346;" vertex="1" parent="1">
+          <mxGeometry x="1310" y="405" width="270" height="25" as="geometry" />
+        </mxCell>
+        <mxCell id="callout_text" value="✅ Push connector (not pull)&#xa;     Full control, no preview dependency&#xa;&#xa;✅ No Blob intermediary&#xa;     SharePoint → memory → index&#xa;&#xa;✅ Zero secrets for Azure services&#xa;     Managed Identity + RBAC only&#xa;&#xa;✅ Flex Consumption (FC1)&#xa;     Scales to zero, pay per execution&#xa;&#xa;✅ Incremental sync + reconciliation&#xa;     Efficient hourly updates" style="text;html=1;fontSize=10;fontStyle=0;align=left;verticalAlign=top;fillColor=none;strokeColor=none;fontColor=#333333;spacingLeft=5;spacingTop=5;" vertex="1" parent="1">
+          <mxGeometry x="1310" y="430" width="270" height="180" as="geometry" />
+        </mxCell>
+
+        <!-- Auth annotation -->
+        <mxCell id="auth_note" value="All Azure auth via&#xa;DefaultAzureCredential&#xa;(Managed Identity in prod,&#xa;Azure CLI for local dev)&#xa;&#xa;No API keys anywhere" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF3E0;fontColor=#663300;strokeColor=#FF8C00;strokeWidth=1;dashed=1;fontSize=9;fontStyle=2;arcSize=10;verticalAlign=middle;align=center;" vertex="1" parent="1">
+          <mxGeometry x="1340" y="650" width="200" height="100" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
