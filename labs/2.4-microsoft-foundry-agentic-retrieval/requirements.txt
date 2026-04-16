@@ -288,7 +288,7 @@ pygments==2.20.0
     #   ipython-pygments-lexers
     #   jupyter-console
     #   nbconvert
-pyjwt[crypto]==2.11.0
+pyjwt[crypto]==2.12.0
     # via
     #   msal
     #   pyjwt
