@@ -1,0 +1,143 @@
+# OpenAPI 3.0 spec for the Foundry IT Assistant's "ask_microsoft_learn_assistant"
+# tool. Binds to the Copilot Studio agent's Direct Line channel.
+#
+# Foundry Agent Service consumes OpenAPI specs as custom tools:
+#   https://learn.microsoft.com/azure/ai-foundry/agents/how-to/tools/openapi-spec
+#
+# Security: the Copilot Studio Direct Line channel accepts the static channel
+# secret as a bearer token on the main endpoints. create-foundry-agent.ps1
+# patches the secret into the x-mcs-directline-secret extension when it attaches
+# the tool to the agent.
+
+openapi: 3.0.3
+info:
+  title: ask_microsoft_learn_assistant
+  description: >
+    Forward a user's question to the "Microsoft Learn Assistant" Copilot Studio
+    agent (grounded in https://learn.microsoft.com/api/mcp) and read the reply
+    back. Use this tool for EVERY factual question about Microsoft products,
+    Azure, Microsoft 365, Power Platform, Dynamics 365, or developer topics.
+  version: 1.0.0
+
+servers:
+  - url: https://directline.botframework.com/v3/directline
+    description: Bot Framework Direct Line 3.0
+
+security:
+  - bearerAuth: []
+
+paths:
+  /conversations:
+    post:
+      operationId: startConversation
+      summary: Start a new Direct Line conversation with the Microsoft Learn Assistant.
+      description: >
+        Call this ONCE per user session before posting the first activity.
+        Remember the returned conversationId and use it in subsequent calls.
+      responses:
+        '201':
+          description: Conversation created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Conversation'
+
+  /conversations/{conversationId}/activities:
+    post:
+      operationId: postActivity
+      summary: Send the user's question to the Microsoft Learn Assistant.
+      parameters:
+        - in: path
+          name: conversationId
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Activity'
+      responses:
+        '200':
+          description: Activity accepted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: string }
+
+    get:
+      operationId: getActivities
+      summary: Read new activities (replies) from the Microsoft Learn Assistant.
+      description: >
+        Poll this endpoint with the latest watermark until you see an activity
+        with type == "message" and from.role == "bot" whose inputHint is
+        "acceptingInput" — that is the end of the bot turn.
+      parameters:
+        - in: path
+          name: conversationId
+          required: true
+          schema: { type: string }
+        - in: query
+          name: watermark
+          schema: { type: string }
+          description: Pass the watermark returned by the previous call; omit on first call.
+      responses:
+        '200':
+          description: List of activities and a new watermark
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ActivitySet'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: Static Direct Line channel secret.
+
+  schemas:
+    Conversation:
+      type: object
+      properties:
+        conversationId: { type: string }
+        token:          { type: string }
+        expires_in:     { type: integer }
+        streamUrl:      { type: string }
+
+    Activity:
+      type: object
+      required: [type, from, text]
+      properties:
+        type: { type: string, enum: [message], example: message }
+        from:
+          type: object
+          required: [id]
+          properties:
+            id:   { type: string, example: it-assistant }
+            name: { type: string, example: IT Assistant }
+        text:   { type: string, description: The user's question. }
+        locale: { type: string, example: en-US }
+
+    ActivitySet:
+      type: object
+      properties:
+        watermark:  { type: string }
+        activities:
+          type: array
+          items:
+            type: object
+            properties:
+              id:          { type: string }
+              type:        { type: string }
+              from:
+                type: object
+                properties:
+                  id:   { type: string }
+                  name: { type: string }
+                  role: { type: string, enum: [user, bot] }
+              text:       { type: string }
+              inputHint:  { type: string, enum: [acceptingInput, expectingInput, ignoringInput] }
+              timestamp:  { type: string, format: date-time }

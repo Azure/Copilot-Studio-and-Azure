@@ -1,0 +1,12 @@
+{
+    "_comment": "Body template for POST /api/projects/{projectId}/assistants on a Microsoft Foundry Agent Service project. create-foundry-agent.ps1 substitutes ${INSTRUCTIONS} and ${MODEL} at creation time, then attaches the OpenAPI tool from ask-mcs.openapi.yaml in a follow-up call.",
+    "name": "IT Assistant",
+    "description": "Voice- and text-friendly IT helper that answers Microsoft product and developer questions by delegating to the 'Microsoft Learn Assistant' Copilot Studio agent over Direct Line.",
+    "model": "${MODEL}",
+    "instructions": "${INSTRUCTIONS}",
+    "tools": [],
+    "metadata": {
+        "accelerator": "voice-pushtotalk",
+        "owner": "it-assistant"
+    }
+}

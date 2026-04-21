@@ -39,7 +39,7 @@ Set this up once per tenant:
 
 ```powershell
 # 1. Create an app registration + secret
-$app = New-AzADApplication -DisplayName "voice-channel-deploy"
+$app = New-AzADApplication -DisplayName "voice-pushtotalk-deploy"
 $sp  = New-AzADServicePrincipal -ApplicationId $app.AppId
 $pw  = New-AzADAppCredential -ApplicationId $app.AppId -EndDate (Get-Date).AddYears(1)
 Write-Host "Tenant    : $((Get-AzContext).Tenant.Id)"

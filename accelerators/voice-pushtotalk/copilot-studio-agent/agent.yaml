@@ -45,18 +45,18 @@ instructions: |
 aiSettings:
   generativeMode: enabled
   strictContentModeration: true
-  # Temperature stays low because this agent is voice-facing — minimize hallucinations
   temperature: 0.3
 
 # Tools — MCP reference loaded from the sibling file
 tools:
   - $ref: "./tools/microsoft-learn-mcp.yaml"
 
-# Channels enabled at publish time
+# Channels enabled at publish time.
+# Only Direct Line is turned on — the Foundry IT Assistant is the user-facing
+# agent and calls this MCS agent over Direct Line. Do NOT enable Teams/M365
+# here or you will get two competing entry points in the agent store.
 channels:
   directLine:
     enabled: true
   microsoftTeams:
-    enabled: true
-    # When Teams is enabled, the MCS admin UI will also let you enable
-    # "Copilot for Microsoft 365" (distribution to M365 Chat).
+    enabled: false

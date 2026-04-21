@@ -1,0 +1,144 @@
+{
+    "$schema": "https://schema.management.azure.com/schemas/0.1.2-preview/CreateUIDefinition.MultiVm.json#",
+    "handler": "Microsoft.Azure.CreateUIDef",
+    "version": "0.1.2-preview",
+    "parameters": {
+        "basics": [
+            {
+                "name": "baseName",
+                "type": "Microsoft.Common.TextBox",
+                "label": "Base name",
+                "toolTip": "3-18 lowercase chars. Seeds the Foundry custom domain and Key Vault name.",
+                "constraints": {
+                    "required": true,
+                    "regex": "^[a-z][a-z0-9-]{2,17}$",
+                    "validationMessage": "3-18 chars, lowercase, starts with a letter. Digits and single hyphens allowed."
+                }
+            }
+        ],
+        "steps": [
+            {
+                "name": "foundry",
+                "label": "Foundry (IT Assistant)",
+                "elements": [
+                    {
+                        "name": "info",
+                        "type": "Microsoft.Common.InfoBox",
+                        "visible": true,
+                        "options": {
+                            "icon": "Info",
+                            "text": "Creates a Microsoft Foundry (AIServices) resource. After the deployment, run foundry-agent/create-foundry-agent.ps1 to create the IT Assistant and attach the Direct Line tool, then foundry-agent/publish-to-teams.ps1 to push it to Teams and M365 Copilot."
+                        }
+                    },
+                    {
+                        "name": "foundryModel",
+                        "type": "Microsoft.Common.DropDown",
+                        "label": "Foundry text model",
+                        "defaultValue": "GPT-4.1",
+                        "toolTip": "Model used by the IT Assistant. Must be available in your Foundry region.",
+                        "constraints": {
+                            "allowedValues": [
+                                { "label": "GPT-4.1",      "value": "gpt-4.1" },
+                                { "label": "GPT-4.1 mini", "value": "gpt-4.1-mini" },
+                                { "label": "GPT-4o",       "value": "gpt-4o" },
+                                { "label": "GPT-4o mini",  "value": "gpt-4o-mini" },
+                                { "label": "GPT-5",        "value": "gpt-5" },
+                                { "label": "GPT-5 mini",   "value": "gpt-5-mini" }
+                            ]
+                        }
+                    }
+                ]
+            },
+            {
+                "name": "copilotStudio",
+                "label": "Copilot Studio (Microsoft Learn Assistant)",
+                "elements": [
+                    {
+                        "name": "info",
+                        "type": "Microsoft.Common.InfoBox",
+                        "visible": true,
+                        "options": {
+                            "icon": "Info",
+                            "text": "If you fill these fields, the deployment creates the Copilot Studio agent and writes the Direct Line secret to Key Vault. Leave blank to create the MCS agent later with copilot-studio-agent/create-agent.ps1."
+                        }
+                    },
+                    {
+                        "name": "mcsAgentName",
+                        "type": "Microsoft.Common.TextBox",
+                        "label": "Agent display name",
+                        "defaultValue": "Microsoft Learn Assistant",
+                        "constraints": { "required": true }
+                    },
+                    {
+                        "name": "powerPlatformEnvironmentUrl",
+                        "type": "Microsoft.Common.TextBox",
+                        "label": "Power Platform environment URL",
+                        "defaultValue": "",
+                        "toolTip": "Full URL, e.g. https://contoso.crm.dynamics.com.",
+                        "constraints": {
+                            "required": false,
+                            "regex": "^$|^https://[^\\s]+\\.(crm|crm\\d+)\\.dynamics\\.com/?$",
+                            "validationMessage": "Must be a https://<env>.crm*.dynamics.com URL, or empty."
+                        }
+                    },
+                    {
+                        "name": "powerPlatformSpnClientId",
+                        "type": "Microsoft.Common.TextBox",
+                        "label": "Service principal client ID (GUID)",
+                        "defaultValue": "",
+                        "toolTip": "Entra SPN with 'Application User' + Dataverse System Admin in the PP env.",
+                        "constraints": {
+                            "required": false,
+                            "regex": "^$|^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+                            "validationMessage": "Must be a GUID, or empty."
+                        }
+                    },
+                    {
+                        "name": "powerPlatformSpnClientSecret",
+                        "type": "Microsoft.Common.PasswordBox",
+                        "label": { "password": "Service principal secret", "confirmPassword": "Confirm secret" },
+                        "constraints": { "required": false },
+                        "options": { "hideConfirmation": true }
+                    }
+                ]
+            },
+            {
+                "name": "secrets",
+                "label": "Secrets access",
+                "elements": [
+                    {
+                        "name": "info",
+                        "type": "Microsoft.Common.InfoBox",
+                        "visible": true,
+                        "options": {
+                            "icon": "Info",
+                            "text": "The Direct Line secret is written to Key Vault. Grant your user read access so foundry-agent/create-foundry-agent.ps1 can fetch it locally."
+                        }
+                    },
+                    {
+                        "name": "secretReaderObjectId",
+                        "type": "Microsoft.Common.TextBox",
+                        "label": "Your Entra object ID",
+                        "defaultValue": "",
+                        "toolTip": "Find it: az ad signed-in-user show --query id -o tsv. Leave empty if you prefer to grant access later.",
+                        "constraints": {
+                            "required": false,
+                            "regex": "^$|^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+                            "validationMessage": "Must be a GUID, or empty."
+                        }
+                    }
+                ]
+            }
+        ],
+        "outputs": {
+            "baseName":                     "[basics('baseName')]",
+            "location":                     "[location()]",
+            "foundryModel":                 "[steps('foundry').foundryModel]",
+            "mcsAgentName":                 "[steps('copilotStudio').mcsAgentName]",
+            "powerPlatformEnvironmentUrl":  "[steps('copilotStudio').powerPlatformEnvironmentUrl]",
+            "powerPlatformSpnClientId":     "[steps('copilotStudio').powerPlatformSpnClientId]",
+            "powerPlatformSpnClientSecret": "[steps('copilotStudio').powerPlatformSpnClientSecret]",
+            "secretReaderObjectId":         "[steps('secrets').secretReaderObjectId]"
+        }
+    }
+}

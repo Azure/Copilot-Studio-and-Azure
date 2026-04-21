@@ -1,8 +1,11 @@
 # Microsoft Learn Assistant — Copilot Studio agent
 
-The MCS agent that actually answers the user's questions. The voice agent in
-Foundry is dumb on purpose: it exists only to speak and listen, and forwards
-every turn to this agent via Direct Line.
+The MCS agent that actually answers questions. Its Direct Line channel is
+consumed by the Foundry **IT Assistant** agent as a custom OpenAPI tool
+(`ask_microsoft_learn_assistant` — see `../foundry-agent/ask-mcs.openapi.yaml`).
+
+This agent is never published to Teams or M365 directly — only the Foundry
+agent is user-facing.
 
 ## Files
 
@@ -30,7 +33,7 @@ The script:
 2. Creates the agent from `agent.yaml` (`pac copilot create --file`, falling back to `pac copilot new` + `pac copilot update --file` for older pac versions).
 3. Publishes it (`pac copilot publish`).
 4. Enables the **Direct Line** channel and prints the secret.
-5. Emits a one-liner `az webapp config appsettings set` that wires the secret into the bridge.
+5. Prints the Direct Line secret — copy it and pass it to `../foundry-agent/create-foundry-agent.ps1 -DirectLineSecret …`. The one-click `deploy/` flow writes it straight to Key Vault instead.
 
 ## Notes on the MCP tool
 
@@ -39,15 +42,15 @@ Microsoft Learn MCP is:
 - A remote **Streamable HTTP** MCP server at `https://learn.microsoft.com/api/mcp`.
 - **Unauthenticated** — you do not need to create a connection reference or app registration.
 - Subject to the [Microsoft APIs Terms of Use](https://learn.microsoft.com/legal/microsoft-apis/terms-of-use).
-- Rate-limited softly by the accelerator to 30 req/min per agent to prevent a runaway voice loop from hammering the server.
+- Rate-limited softly by the accelerator to 30 req/min per agent.
 
 It exposes three tools to the agent:
 
 | Tool | Use |
 |---|---|
-| `microsoft_docs_search` | Semantic search across Learn content. The agent calls this first for most questions. |
+| `microsoft_docs_search` | Semantic search across Learn content. The agent calls this first. |
 | `microsoft_docs_fetch` | Fetches the full body of a specific Learn article by ID. |
-| `microsoft_code_sample_search` | Searches Learn code samples (useful for how-to questions). |
+| `microsoft_code_sample_search` | Searches Learn code samples. Useful for how-to questions. |
 
 ## Manual fallback (portal path)
 
@@ -61,4 +64,4 @@ pinned to an older ring), create the agent via the portal:
 5. **Channels** → **Direct Line** → **Turn on**. Copy the secret.
 6. **Publish**.
 
-Then skip ahead to step 4 of the main README and paste the secret into the App Service settings.
+Then pass the secret to `../foundry-agent/create-foundry-agent.ps1` (see the main [README](../README.md)).
