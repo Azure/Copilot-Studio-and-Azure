@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>IT Assistant — Voice Channel</title>
+    <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+    <header>
+        <div class="brand">
+            <span class="logo" aria-hidden="true"></span>
+            <div>
+                <h1>IT Assistant</h1>
+                <p class="subtitle" id="subtitle">Powered by Azure AI Foundry Voice Live</p>
+            </div>
+        </div>
+        <div class="status-pill" id="status">Idle</div>
+    </header>
+
+    <main>
+        <section class="talk-panel">
+            <button id="toggle" class="talk-btn" data-state="idle" aria-label="Start talking">
+                <span class="talk-icon"></span>
+                <span class="talk-label">Start talking</span>
+            </button>
+            <div class="meters" aria-hidden="true">
+                <canvas id="meter-mic" width="240" height="48"></canvas>
+                <canvas id="meter-agent" width="240" height="48"></canvas>
+            </div>
+            <p class="hint" id="hint">Click the button, allow microphone access, then speak.</p>
+        </section>
+
+        <section class="transcript" aria-live="polite">
+            <h2>Conversation</h2>
+            <div id="turns"></div>
+        </section>
+    </main>
+
+    <footer>
+        <div id="mode-tag" class="mode-tag">loading…</div>
+        <a href="https://github.com/Azure/Copilot-Studio-and-Azure/tree/main/accelerators/voice-channel" target="_blank" rel="noopener">
+            View on GitHub →
+        </a>
+    </footer>
+
+    <script src="client.js"></script>
+</body>
+</html>

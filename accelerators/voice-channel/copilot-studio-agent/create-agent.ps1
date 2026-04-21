@@ -56,8 +56,8 @@ Write-Host "pac version: $pacVersion"
 # Step 1 — Select/create auth profile for the environment
 # ---------------------------------------------------------------------------
 Write-Host "`n[1/5] Authenticating pac..." -ForegroundColor Yellow
-pac auth create --environment $EnvironmentUrl --name 'voice-pushtotalk' | Out-Host
-pac auth select --name 'voice-pushtotalk' | Out-Host
+pac auth create --environment $EnvironmentUrl --name 'voice-channel' | Out-Host
+pac auth select --name 'voice-channel' | Out-Host
 pac org who | Out-Host
 
 # ---------------------------------------------------------------------------

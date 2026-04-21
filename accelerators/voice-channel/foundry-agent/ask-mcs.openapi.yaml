@@ -1,22 +1,22 @@
-# OpenAPI 3.0 spec for the Foundry IT Assistant's "ask_microsoft_learn_assistant"
+# OpenAPI 3.0 spec for the Foundry IT Assistant's ask_microsoft_learn_assistant
 # tool. Binds to the Copilot Studio agent's Direct Line channel.
 #
 # Foundry Agent Service consumes OpenAPI specs as custom tools:
 #   https://learn.microsoft.com/azure/ai-foundry/agents/how-to/tools/openapi-spec
 #
-# Security: the Copilot Studio Direct Line channel accepts the static channel
-# secret as a bearer token on the main endpoints. create-foundry-agent.ps1
-# patches the secret into the x-mcs-directline-secret extension when it attaches
-# the tool to the agent.
+# Direct Line accepts the static channel secret as a bearer token on the
+# main endpoints. create-foundry-agent.ps1 patches the secret into the
+# tool auth config when it attaches the tool to the agent.
 
 openapi: 3.0.3
 info:
   title: ask_microsoft_learn_assistant
   description: >
-    Forward a user's question to the "Microsoft Learn Assistant" Copilot Studio
-    agent (grounded in https://learn.microsoft.com/api/mcp) and read the reply
-    back. Use this tool for EVERY factual question about Microsoft products,
-    Azure, Microsoft 365, Power Platform, Dynamics 365, or developer topics.
+    Forward a user's question to the "Microsoft Learn Assistant" Copilot
+    Studio agent (grounded in https://learn.microsoft.com/api/mcp) and read
+    the reply. Use this tool for EVERY factual question about Microsoft
+    products, Azure, Microsoft 365, Power Platform, Dynamics 365, or
+    developer topics.
   version: 1.0.0
 
 servers:
@@ -31,9 +31,7 @@ paths:
     post:
       operationId: startConversation
       summary: Start a new Direct Line conversation with the Microsoft Learn Assistant.
-      description: >
-        Call this ONCE per user session before posting the first activity.
-        Remember the returned conversationId and use it in subsequent calls.
+      description: Call this ONCE per user session. Remember the returned conversationId.
       responses:
         '201':
           description: Conversation created
@@ -71,9 +69,8 @@ paths:
       operationId: getActivities
       summary: Read new activities (replies) from the Microsoft Learn Assistant.
       description: >
-        Poll this endpoint with the latest watermark until you see an activity
-        with type == "message" and from.role == "bot" whose inputHint is
-        "acceptingInput" — that is the end of the bot turn.
+        Poll with the latest watermark until you see a message from the bot
+        whose inputHint is "acceptingInput" — that is the end of turn.
       parameters:
         - in: path
           name: conversationId
@@ -130,14 +127,14 @@ components:
           items:
             type: object
             properties:
-              id:          { type: string }
-              type:        { type: string }
+              id:         { type: string }
+              type:       { type: string }
               from:
                 type: object
                 properties:
                   id:   { type: string }
                   name: { type: string }
                   role: { type: string, enum: [user, bot] }
-              text:       { type: string }
-              inputHint:  { type: string, enum: [acceptingInput, expectingInput, ignoringInput] }
-              timestamp:  { type: string, format: date-time }
+              text:      { type: string }
+              inputHint: { type: string, enum: [acceptingInput, expectingInput, ignoringInput] }
+              timestamp: { type: string, format: date-time }

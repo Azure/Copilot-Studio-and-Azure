@@ -1,0 +1,189 @@
+{
+    "$schema": "https://schema.management.azure.com/schemas/0.1.2-preview/CreateUIDefinition.MultiVm.json#",
+    "handler": "Microsoft.Azure.CreateUIDef",
+    "version": "0.1.2-preview",
+    "parameters": {
+        "basics": [
+            {
+                "name": "environmentName",
+                "type": "Microsoft.Common.TextBox",
+                "label": "Environment name",
+                "defaultValue": "voice-channel",
+                "toolTip": "Seeds resource names. Lowercase, 1-64 chars.",
+                "constraints": {
+                    "required": true,
+                    "regex": "^[a-z][a-z0-9-]{0,63}$",
+                    "validationMessage": "1-64 chars, lowercase, digits and hyphens allowed."
+                }
+            }
+        ],
+        "steps": [
+            {
+                "name": "foundry",
+                "label": "Foundry + Voice Live",
+                "elements": [
+                    {
+                        "name": "info",
+                        "type": "Microsoft.Common.InfoBox",
+                        "visible": true,
+                        "options": {
+                            "icon": "Info",
+                            "text": "Creates the Microsoft Foundry resource and Azure Container App that hosts the Voice Live web UI. After the deployment, run foundry-agent/create-foundry-agent.ps1 locally to create the IT Assistant Foundry Agent and attach the Direct Line tool, then foundry-agent/publish-to-teams.ps1 to publish to Teams and Microsoft 365 Copilot."
+                        }
+                    },
+                    {
+                        "name": "voiceLiveModel",
+                        "type": "Microsoft.Common.DropDown",
+                        "label": "Voice Live model",
+                        "defaultValue": "gpt-realtime-mini (basic)",
+                        "toolTip": "Model used by the web UI before create-foundry-agent.ps1 binds the IT Assistant via agent_id.",
+                        "constraints": {
+                            "allowedValues": [
+                                { "label": "gpt-realtime-mini (basic)", "value": "gpt-realtime-mini" },
+                                { "label": "gpt-realtime (pro)",        "value": "gpt-realtime" }
+                            ]
+                        }
+                    },
+                    {
+                        "name": "voiceName",
+                        "type": "Microsoft.Common.DropDown",
+                        "label": "TTS voice",
+                        "defaultValue": "Ava (HD, en-US)",
+                        "constraints": {
+                            "allowedValues": [
+                                { "label": "Ava (HD, en-US)",    "value": "en-US-Ava:DragonHDLatestNeural" },
+                                { "label": "Andrew (HD, en-US)", "value": "en-US-Andrew:DragonHDLatestNeural" },
+                                { "label": "Ava (en-US)",        "value": "en-US-AvaNeural" },
+                                { "label": "Jenny (en-US)",      "value": "en-US-JennyNeural" },
+                                { "label": "Guy (en-US)",        "value": "en-US-GuyNeural" }
+                            ]
+                        }
+                    },
+                    {
+                        "name": "mcsAgentName",
+                        "type": "Microsoft.Common.TextBox",
+                        "label": "Copilot Studio agent display name",
+                        "defaultValue": "Microsoft Learn Assistant",
+                        "toolTip": "Used both by the Copilot Studio provisioning tab below and as the display label in the web UI.",
+                        "constraints": { "required": true }
+                    }
+                ]
+            },
+            {
+                "name": "source",
+                "label": "Server image source",
+                "elements": [
+                    {
+                        "name": "info",
+                        "type": "Microsoft.Common.InfoBox",
+                        "visible": true,
+                        "options": {
+                            "icon": "Info",
+                            "text": "A deployment script runs `az acr build` against the GitHub URL below to build the server container image on first deploy. No local Docker is required. Leave defaults unless you have forked the repo."
+                        }
+                    },
+                    {
+                        "name": "gitSourceUrl",
+                        "type": "Microsoft.Common.TextBox",
+                        "label": "Git repository URL",
+                        "defaultValue": "https://github.com/Azure/Copilot-Studio-and-Azure.git",
+                        "constraints": { "required": true }
+                    },
+                    {
+                        "name": "gitBranch",
+                        "type": "Microsoft.Common.TextBox",
+                        "label": "Branch",
+                        "defaultValue": "main",
+                        "constraints": { "required": true }
+                    }
+                ]
+            },
+            {
+                "name": "copilotStudio",
+                "label": "Copilot Studio (optional)",
+                "elements": [
+                    {
+                        "name": "info",
+                        "type": "Microsoft.Common.InfoBox",
+                        "visible": true,
+                        "options": {
+                            "icon": "Info",
+                            "text": "If you fill these fields, the deployment will automatically create the Microsoft Learn Assistant Copilot Studio agent using pac CLI, enable Direct Line, and write the channel secret to Key Vault. Otherwise, leave blank and run copilot-studio-agent/create-agent.ps1 manually after deployment."
+                        }
+                    },
+                    {
+                        "name": "powerPlatformEnvironmentUrl",
+                        "type": "Microsoft.Common.TextBox",
+                        "label": "Power Platform environment URL",
+                        "defaultValue": "",
+                        "toolTip": "Full URL, e.g. https://contoso.crm.dynamics.com.",
+                        "constraints": {
+                            "required": false,
+                            "regex": "^$|^https://[^\\s]+\\.(crm|crm\\d+)\\.dynamics\\.com/?$",
+                            "validationMessage": "Must be a https://<env>.crm*.dynamics.com URL or empty."
+                        }
+                    },
+                    {
+                        "name": "powerPlatformSpnClientId",
+                        "type": "Microsoft.Common.TextBox",
+                        "label": "Service principal client ID (GUID)",
+                        "defaultValue": "",
+                        "toolTip": "Entra SPN registered as an Application User + Dataverse System Admin in the PP env.",
+                        "constraints": {
+                            "required": false,
+                            "regex": "^$|^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+                            "validationMessage": "GUID or empty."
+                        }
+                    },
+                    {
+                        "name": "powerPlatformSpnClientSecret",
+                        "type": "Microsoft.Common.PasswordBox",
+                        "label": { "password": "Service principal secret", "confirmPassword": "Confirm secret" },
+                        "constraints": { "required": false },
+                        "options": { "hideConfirmation": true }
+                    }
+                ]
+            },
+            {
+                "name": "principal",
+                "label": "Secret access",
+                "elements": [
+                    {
+                        "name": "info",
+                        "type": "Microsoft.Common.InfoBox",
+                        "visible": true,
+                        "options": {
+                            "icon": "Info",
+                            "text": "The Direct Line secret lands in Key Vault. Grant yourself read access so foundry-agent/create-foundry-agent.ps1 can fetch it from your workstation."
+                        }
+                    },
+                    {
+                        "name": "principalId",
+                        "type": "Microsoft.Common.TextBox",
+                        "label": "Your Entra object ID",
+                        "defaultValue": "",
+                        "toolTip": "Find it: az ad signed-in-user show --query id -o tsv. Leave empty to grant access later.",
+                        "constraints": {
+                            "required": false,
+                            "regex": "^$|^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+                            "validationMessage": "GUID or empty."
+                        }
+                    }
+                ]
+            }
+        ],
+        "outputs": {
+            "environmentName":              "[basics('environmentName')]",
+            "location":                     "[location()]",
+            "voiceLiveModel":               "[steps('foundry').voiceLiveModel]",
+            "voiceName":                    "[steps('foundry').voiceName]",
+            "mcsAgentName":                 "[steps('foundry').mcsAgentName]",
+            "gitSourceUrl":                 "[steps('source').gitSourceUrl]",
+            "gitBranch":                    "[steps('source').gitBranch]",
+            "powerPlatformEnvironmentUrl":  "[steps('copilotStudio').powerPlatformEnvironmentUrl]",
+            "powerPlatformSpnClientId":     "[steps('copilotStudio').powerPlatformSpnClientId]",
+            "powerPlatformSpnClientSecret": "[steps('copilotStudio').powerPlatformSpnClientSecret]",
+            "principalId":                  "[steps('principal').principalId]"
+        }
+    }
+}
