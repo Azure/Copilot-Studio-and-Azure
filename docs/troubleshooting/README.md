@@ -5,6 +5,9 @@ A practical, **0-to-hero** troubleshooting guide for **makers and builders** of 
 > [!TIP]
 > **Golden rule:** Before you go anywhere else, **try to reproduce the issue in the Copilot Studio Test pane**. If it doesn't reproduce there, it's almost certainly channel-, identity-, or environment-specific — not an agent design issue.
 
+> [!TIP]
+> **Check the [Power Platform Known Issues](https://admin.powerplatform.microsoft.com/support/knownIssues) page** ([docs](https://learn.microsoft.com/en-us/power-platform/admin/view-known-issues)) before going deep — Microsoft may have already acknowledged the bug and published a workaround. See [Diagnostic toolbox §5 → Known issues page](./00-diagnostic-toolbox.md#known-issues-page).
+
 ## Where do I start?
 
 ```mermaid
@@ -30,7 +33,6 @@ flowchart TD
 | 01 | [Basic (Portal)](./01-basic.md) | 🟢 | Day-1 issues: sign-in / licensing, agent won't save or publish, topic not triggering, knowledge not returning answers, Test pane errors. |
 | 02 | [Intermediate (Portal)](./02-intermediate.md) | 🟢 🟡 | Authentication (Entra / OAuth), connectors and Power Automate flows, variables / slot filling, custom entities, environments and solutions, Application Insights basics. |
 | 03 | [Advanced (Portal)](./03-advanced.md) | 🟡 🔴 | MCP tools, custom / fine-tuned models, Azure AI Search integration, Foundry IQ agentic retrieval, generative orchestration debugging, prompt and instruction tuning. |
-| 04 | Channels | — | *Coming soon* — Teams, Microsoft 365 Copilot, Web / Direct Line, Telephony, custom website embed. |
 
 ## Minimum context to collect
 

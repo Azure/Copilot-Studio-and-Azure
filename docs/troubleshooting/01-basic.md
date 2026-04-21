@@ -3,187 +3,158 @@
 The **day-1 issues** every maker hits while authoring an agent in the Copilot Studio portal. If you're new here, start at the top and work down.
 
 > [!TIP]
-> **Reproduce in the [Test pane](./00-diagnostic-toolbox.md#1-test-pane) first.** If the issue does not reproduce there, jump straight to [Channels troubleshooting](./README.md#how-this-guide-is-organized).
+> **Always reproduce in the [Test pane](./00-diagnostic-toolbox.md#1-test-pane) first.** If the issue does not reproduce in the portal, it's likely a channel/auth problem — see [02 — Intermediate § I1](./02-intermediate.md#i1--user-is-asked-to-sign-in-repeatedly--auth-loop).
 
 ## How to diagnose this area
 
-A short, repeatable diagnostic flow for basic issues — applied with tools from the [Diagnostic toolbox](./00-diagnostic-toolbox.md).
+A short, repeatable diagnostic flow for basic issues — applied with tools from the [Diagnostic toolbox](./00-diagnostic-toolbox.md). (Step 1 — reproduce in the Test pane — is assumed; see the tip above.)
 
-1. **Reproduce in the Test pane.** Open a fresh conversation (refresh icon) and try the exact user input that fails.
+1. **Check the [Known Issues page](./00-diagnostic-toolbox.md#known-issues-page).** Filter by **Microsoft Copilot Studio** and search the error text. If Microsoft has already acknowledged it, follow the workaround and stop here.
 2. **Open the [Activity map](./00-diagnostic-toolbox.md#2-activity-map)** for that conversation. Confirm whether the expected topic / knowledge call was triggered at all.
 3. **Inspect variables** at the failing turn. Most basic issues are an empty / wrong variable, not a logic bug.
 4. **Check the agent's publish state.** Many "it doesn't work" reports are simply unpublished changes.
 5. **Check licensing / environment** in the [Power Platform Admin Center](./00-diagnostic-toolbox.md#power-platform-admin-center-ppac) only if steps 1–4 don't explain the symptom.
 
-<!--
-Source: optional screenshot showing the diagnostic flow inside the portal
-(Test pane open, Activity map open side-by-side).
-Filename: images/01-basic-diagnostic-flow.png
--->
-
 ## Common issues at a glance
 
 | # | Symptom | Likely cause | Jump to |
 |---|---------|--------------|---------|
-| B1 | Can't sign in to Copilot Studio / no environments listed | Licensing / wrong tenant / wrong environment | [B1](#b1--cant-sign-in-or-no-environments-listed) |
-| B2 | "Save" or "Publish" fails | Validation errors, missing required fields, environment capacity | [B2](#b2--save-or-publish-fails) |
-| B3 | Topic does not trigger on expected user input | Trigger phrases, generative orchestration choosing another path | [B3](#b3--topic-does-not-trigger) |
-| B4 | Generative answers return empty / "I don't know" | No / wrong knowledge sources, scoping, indexing | [B4](#b4--generative-answers-return-empty) |
-| B5 | Knowledge source returns wrong / stale results | Indexing, source freshness, scoping | [B5](#b5--knowledge-source-returns-wrong-results) |
-| B6 | Test pane shows an error message at runtime | Variable not set, action failed, missing connection | [B6](#b6--test-pane-shows-a-runtime-error) |
-| B7 | "Publish not allowed" after editing Teams / M365 Copilot channel settings | Channel/auth state out of sync after recent change | [B7](#b7--publish-not-allowed-after-teams--m365-copilot-channel-changes) |
+| B1 | Can't sign in / no environments listed | Licensing / wrong tenant / no Dataverse DB | [B1](#b1--cant-sign-in-or-no-environments-listed) |
+| B2 | Save or Publish fails | Validation errors, source limits, ALM deps | [B2](#b2--save-or-publish-fails) |
+| B3 | Topic, agent, or tool does not trigger | Trigger phrases, descriptions, orchestration routing | [B3](#b3--topic-agent-or-tool-does-not-trigger) |
+| B4 | Generative answers return empty | Wrong / missing source, permissions, region | [B4](#b4--generative-answers-return-empty) |
+| B5 | Knowledge returns wrong results | Scope too broad, vague description, indexing | [B5](#b5--knowledge-source-returns-wrong-results) |
+| B6 | Test pane runtime error | Error code, in-reply error, variable empty, flow failure | [B6](#b6--test-pane-shows-a-runtime-error) |
+| B7 | "Publish not allowed" after channel change | Channel / auth out of sync, DLP policy | [B7](#b7--publish-not-allowed-after-teams--m365-copilot-channel-changes) |
 
 ---
 
 ## B1 — Can't sign in or no environments listed
 
-<!--
-Source brief — please provide:
-- Symptom: exact text users see (e.g. "You don't have access to Copilot Studio").
-- Reproduce in Test pane: N/A (pre-portal issue) — describe how to confirm in Microsoft 365 admin center / PPAC instead.
-- Likely causes: missing license, signed in with wrong tenant, environment is in another region, conditional access.
-- Step-by-step fix:
-  1. Verify the signed-in account in the top-right of copilotstudio.microsoft.com.
-  2. Switch environment using the environment picker (top bar).
-  3. Confirm a Copilot Studio license is assigned (link to Lab 0.1).
-- Verify: user lands on the agents list page.
-- Screenshots:
-  - images/01-basic-b1-account-picker.png
-  - images/01-basic-b1-environment-picker.png
-- Related links:
-  - Lab 0.1 (licensing / PAYG): ../../labs/0.1-enable-payg/0.1-enable-payg.md
--->
+Environment picker is empty or missing your target environment. *(Pre-authoring issue — Test pane N/A.)*
+
+<img src="images/01-environment-permission.png" width="700" alt="Environment picker showing no environments or a permissions error">
+
+**Diagnose & fix.**
+
+1. **No Dataverse database** — In [PPAC](https://admin.powerplatform.com/), confirm the environment exists and has a database; [create one](https://learn.microsoft.com/en-us/power-platform/admin/create-database) if not.
+2. **Missing permissions** — Verify the user has the **Environment Maker** security role (or higher) in the target environment.
+3. **Unsupported region / wrong environment** — The M365 Copilot Chat environment isn't meant for Copilot Studio. Switch to a production or sandbox environment in a [supported region](https://learn.microsoft.com/en-us/microsoft-copilot-studio/data-location).
+4. **Domain transfer** — Verify the user's new UPN and licensing, then resync security roles in that environment.
+
+**Verify:** environment appears in the picker and opens normally.
+**See also:** [Environments in Copilot Studio](https://learn.microsoft.com/en-us/microsoft-copilot-studio/environments-first-run-experience) · [Troubleshooting hub](https://learn.microsoft.com/en-us/troubleshoot/power-platform/copilot-studio/welcome-copilot-studio)
+
+---
 
 ## B2 — Save or Publish fails
 
-<!--
-Source brief — please provide:
-- Symptom: error banner text(s) on Save / Publish.
-- Reproduce in Test pane: N/A — this is an authoring action.
-- Likely causes:
-  - Validation errors highlighted on a topic node.
-  - Missing required field on a tool / connector.
-  - Environment over capacity / DLP block.
-- Step-by-step fix (numbered).
-- Verify: green "Published" status appears on the agent header.
-- Screenshots:
-  - images/01-basic-b2-publish-error-banner.png
-  - images/01-basic-b2-validation-errors.png
-- Related links:
-  - Lab 1.6 ALM: ../../labs/1.6-application-lifecycle-management/1.6.1-manual-import-export.md
--->
+**Save** or **Publish** fails, shows an error banner, or never completes. *(Authoring action — Test pane usually N/A; capture runtime failures separately.)*
 
-## B3 — Topic does not trigger
+<img src="images/01-publish-fail.png" width="500" alt="Publish error banner in Copilot Studio">
 
-<!--
-Source brief — please provide:
-- Symptom: user sends a message that should match a topic, but the agent answers from generative answers (or fallback).
-- Reproduce in Test pane: yes — capture the exact phrase used.
-- Likely causes:
-  - Trigger phrases too narrow / overlap with another topic.
-  - Generative orchestration is on and routes to a tool / generative answer instead.
-  - Topic is disabled or unpublished.
-- Step-by-step fix:
-  1. Open the Activity map (link to toolbox §2) and confirm which node was triggered.
-  2. If orchestration is on, open the Activity map and click **Show rationale** on the failing step (toolbox §2).
-  3. Add or rephrase trigger phrases; consider giving the topic a clear "description" used by the orchestrator.
-- Verify: re-run the same phrase in the Test pane → expected topic node lights up in the Activity map.
-- Screenshots:
-  - images/01-basic-b3-trigger-phrases.png
-  - images/01-basic-b3-activity-map-misroute.png
-- Related links:
-  - Lab 1.1 Topics: ../../labs/1.1-create-topics/1.1-create-topics.md
--->
+**Diagnose & fix.**
+
+1. **Validation error** — Capture the exact error text / error code and run **Topic checker** ([view topic errors](https://learn.microsoft.com/en-us/microsoft-copilot-studio/authoring-topic-management#view-topic-errors)).
+2. **Knowledge-source limits** — Reduce public sources in the failing generative answers node; check the [quotas page](https://learn.microsoft.com/en-us/microsoft-copilot-studio/requirements-quotas).
+3. **ALM / managed-solution** — Open the solution in Power Apps and confirm required dependencies (workflows, environment variables) are included.
+4. **Service-side issue** — Portal freezes or affects multiple users? Capture a [HAR](./00-diagnostic-toolbox.md#4-browser-network-trace-har) and check the [Known Issues page](./00-diagnostic-toolbox.md#known-issues-page).
+
+**Verify:** Save / Publish completes; reopening the agent shows the latest changes.
+**See also:** [B7 (channel-specific publish failure)](#b7--publish-not-allowed-after-teams--m365-copilot-channel-changes) · [Quotas & limits](https://learn.microsoft.com/en-us/microsoft-copilot-studio/requirements-quotas) · [Troubleshooting hub](https://learn.microsoft.com/en-us/troubleshoot/power-platform/copilot-studio/welcome-copilot-studio)
+
+---
+
+## B3 — Topic, agent, or tool does not trigger
+
+User sends a phrase that should invoke a topic, connected agent, or tool, but the orchestrator picks a different path (wrong topic, generative answers, or fallback). *(Reproduce in the Test pane, then open the [Activity map](./00-diagnostic-toolbox.md#2-activity-map).)*
+
+**Diagnose & fix.**
+
+> [!IMPORTANT]
+> The orchestrator relies on the **name** and **description** of every topic, connected agent, and tool to decide when to route. Vague, generic or conflicting descriptions are the #1 cause of mis-routing.
+
+1. **Trigger phrases too narrow / overlapping** — Compare the user's phrase with the topic's triggers; broaden or disambiguate.
+2. **Connected-agent or tool description too vague** — Make the name and description specific about what the agent/tool does and when it should be called.
+3. **Generative orchestration chose another path** — Click **Show rationale** in the Activity map to see why; refine the topic, agent, or tool descriptions.
+4. **Item disabled or unpublished** — Re-enable the topic / tool, or re-add the connected agent, then publish.
+
+**Verify:** same phrase in the Test pane → expected topic, agent, or tool lights up in the Activity map.
+**See also:** [Review agent activity](https://learn.microsoft.com/en-us/microsoft-copilot-studio/authoring-review-activity) · [Generative answers node](https://learn.microsoft.com/en-us/microsoft-copilot-studio/nlu-boost-node)
+
+---
 
 ## B4 — Generative answers return empty
 
-<!--
-Source brief — please provide:
-- Symptom: agent says "I don't know" or returns an empty generative answer for a question that should be covered by knowledge.
-- Reproduce in Test pane: yes.
-- Likely causes:
-  - No knowledge source attached.
-  - Knowledge source is attached but not indexed yet.
-  - Question is outside the configured scope / instructions.
-  - Authentication to the knowledge source failed silently.
-- Step-by-step fix (numbered).
-- Verify: same question in Test pane returns a grounded answer with citation(s).
-- Screenshots:
-  - images/01-basic-b4-knowledge-list.png
-  - images/01-basic-b4-empty-answer-test-pane.png
-- Related links:
-  - Lab 1.4 AI Search: ../../labs/1.4-ai-search/1.4-ai-search.md
--->
+Agent says **"I'm not sure how to help with that"** instead of returning a grounded answer. *(Reproduce in the Test pane; check the Activity map to see if a knowledge step was attempted.)*
+
+<img src="images/01-return-empty.png" width="300" alt="Test pane showing an empty generative answer response">
+
+**Diagnose & fix.**
+
+1. **Source not attached (or attached at the wrong level)** — Topic-level sources override agent-level. Confirm the right source is attached where the question is handled.
+2. **SharePoint / OneDrive permissions** — Verify the user has read access and the agent auth includes `Sites.Read.All` + `Files.Read.All` scopes with consent.
+3. **Limits / unsupported content** — Check [quotas & limits](https://learn.microsoft.com/en-us/microsoft-copilot-studio/requirements-quotas) for supported file types and sizes.
+4. **"Generative AI not available"** — Review [regional / data-movement settings](https://learn.microsoft.com/en-us/microsoft-copilot-studio/data-location).
+5. **Content moderation blocking** — Test with [moderation](https://learn.microsoft.com/en-us/microsoft-copilot-studio/knowledge-copilot-studio#content-moderation) lowered to confirm.
+
+**Verify:** same question returns a grounded answer with citations.
+**See also:** [SharePoint generative answers](https://learn.microsoft.com/en-us/microsoft-copilot-studio/nlu-generative-answers-sharepoint-onedrive) · [Knowledge sources](https://learn.microsoft.com/en-us/microsoft-copilot-studio/knowledge-copilot-studio) · [Data locations](https://learn.microsoft.com/en-us/microsoft-copilot-studio/data-location)
+
+---
 
 ## B5 — Knowledge source returns wrong results
 
-<!--
-Source brief — please provide:
-- Symptom: cited snippet is unrelated, outdated, or from the wrong document.
-- Reproduce in Test pane: yes — capture the citation.
-- Likely causes: stale index, wrong scoping, document permissions, chunking.
-- Step-by-step fix (numbered).
-- Verify: re-run, confirm citation matches expectation.
-- Screenshots:
-  - images/01-basic-b5-citation-detail.png
-- Related links:
-  - Lab 2.1 Advanced AI Search: ../../labs/2.1-ai-search-advanced/2.1-ai-search-advanced.md
-  - Lab 2.3 SharePoint indexer: ../../labs/2.3-ai-search-sharepoint-indexer/
--->
+Agent returns results, but from the wrong document or with the wrong citation. *(Reproduce in the Test pane; inspect the Activity map + returned citations.)*
+
+**Diagnose & fix.**
+
+1. **Scope too broad** — For SharePoint, Copilot Studio searches the URL *and all subpaths*. Narrow to a more specific site / subpath.
+2. **Vague source description** — Make the source **name** and **description** explicit about content and intended use; this directly helps generative orchestration.
+3. **Connector-based knowledge** — Verify semantic labels, indexing completeness, [Work IQ](https://learn.microsoft.com/en-us/microsoft-copilot-studio/knowledge-copilot-studio#tenant-graph-grounding-with-semantic-search), and auth scopes.
+<img src="images/01-Work-IQ.png" width="700" alt="Work IQ knowledge configuration in Copilot Studio">
+4. **Permissions skew** — Users only see content they can access; different users may get different results.
+
+**Verify:** same question returns the correct citation from the expected source.
+**See also:** [Add SharePoint knowledge](https://learn.microsoft.com/en-us/microsoft-copilot-studio/knowledge-add-sharepoint) · [Quotas & limits](https://learn.microsoft.com/en-us/microsoft-copilot-studio/requirements-quotas) · [Knowledge sources](https://learn.microsoft.com/en-us/microsoft-copilot-studio/knowledge-copilot-studio)
+
+---
 
 ## B6 — Test pane shows a runtime error
 
-<!--
-Source brief — please provide:
-- Symptom: red error banner / "Something went wrong" inside the Test pane.
-- Reproduce in Test pane: yes — capture the conversation id.
-- Likely causes:
-  - Action node failed (connector / flow).
-  - Variable used before being set.
-  - Missing required entity in slot filling.
-- Step-by-step fix:
-  1. Click the failing node in the Activity map to expand error detail.
-  2. Inspect input / output of that node.
-  3. If a connector / flow, jump to the Intermediate page (link to 02 §C-flows).
-- Verify: same input completes successfully.
-- Screenshots:
-  - images/01-basic-b6-runtime-error.png
-  - images/01-basic-b6-failing-node-detail.png
-- Related links:
-  - 02 — Intermediate (connectors / flows): ./02-intermediate.md
--->
+Test pane shows a system error banner, an error code, stops responding, or the agent replies with an error message directly in the conversation (e.g. *"Something went wrong"*, *"Sorry, I encountered an error"*, or a raw exception string). *(Reproduce, [save a snapshot](./00-diagnostic-toolbox.md#download-a-test-pane-snapshot), and capture the conversation ID.)*
+
+<img src="images/01-system-error.png" width="300" alt="Test pane showing a runtime error message">
+
+**Diagnose & fix.**
+
+1. **Error code surfaced (banner or in-reply)** — Record the exact text and open **Topic checker**; look it up in the [error-code reference](https://learn.microsoft.com/en-us/troubleshoot/power-platform/copilot-studio/authoring/error-codes).
+2. **Error appears in the agent's reply** — Open the [Activity map](./00-diagnostic-toolbox.md#2-activity-map) and check which node produced the reply. Common causes: a Power Automate flow returned an error that the topic surfaced as a message, or a generative answers / plugin call failed and the fallback text was shown.
+3. **Variable / parameter empty** — In the Activity map, inspect the failing step's inputs / outputs for missing or null values.
+4. **Test pane hangs after first turn** — Check the browser Network tab for a missing or blocked `/subscribe` request (corporate firewall / proxy).
+5. **Connector / flow failure** — Jump to [02 — Intermediate](./02-intermediate.md).
+
+**Verify:** same input completes successfully in the Test pane.
+**See also:** [Error codes](https://learn.microsoft.com/en-us/troubleshoot/power-platform/copilot-studio/authoring/error-codes) · [Test your agent](https://learn.microsoft.com/en-us/microsoft-copilot-studio/authoring-test-bot)
+
+---
 
 ## B7 — "Publish not allowed" after Teams / M365 Copilot channel changes
 
-**Symptom.** After enabling, disabling, or changing settings on the **Microsoft Teams** or **Microsoft 365 Copilot** channel (often together with an authentication change), clicking **Publish** fails with a message similar to *"Publish not allowed"* or the publish never completes.
+After toggling the **Teams** or **M365 Copilot** channel (often alongside an auth change), **Publish** fails or never completes. *(Authoring action — Test pane usually still works.)*
 
-**Reproduce in Test pane.** N/A — this is an authoring action. The Test pane itself usually keeps working.
+<img src="images/01-teams-publish.png" width="500" alt="Publish not allowed error after Teams or M365 Copilot channel change">
 
-**Likely causes.**
+**Diagnose & fix.**
 
-- The channel state is out of sync with the agent's authentication settings after a recent toggle.
-- The Teams or Microsoft 365 Copilot channel was added before authentication was configured the way it now is.
+1. Open your agent → **Settings → Channels** and **remove** the affected channel.
+2. Open **Settings → Security → Authentication** and confirm the auth option matches what the channel requires.
+3. **Check DLP policies** — A Data Loss Prevention policy may block the channel connector. In [PPAC](https://admin.powerplatform.com/) → **Policies → Data policies**, verify the required connectors aren't in the **Blocked** group for this environment.
+4. **Re-add** the channel end-to-end without skipping steps.
+5. **Save** → **Publish**.
 
-**Step-by-step fix.**
-
-1. In the Copilot Studio portal, open your agent → **Settings** → **Channels**.
-2. **Remove** the affected channel (Teams or Microsoft 365 Copilot).
-3. Open **Settings → Security → Authentication** and confirm the authentication option matches what the channel requires (manual auth vs. Microsoft Entra vs. inherited).
-4. **Re-add** the channel. Walk through the configuration end-to-end without skipping steps.
-5. **Save** and try **Publish** again.
-
-**Verify.** Publish completes successfully; the agent header shows a fresh **Published** timestamp; opening the agent in Teams / Microsoft 365 Copilot loads the latest version.
-
-**Related links.**
-
-- [B2 — Save or Publish fails](#b2--save-or-publish-fails) (covers other publish failure modes).
-- [02 — Intermediate § I1 Authentication loop](./02-intermediate.md#i1--authentication-loop-or-repeated-sign-in).
-
-<!--
-Screenshot suggestions:
-- images/01-basic-b7-publish-not-allowed-banner.png
-- images/01-basic-b7-channels-page.png
--->
+**Verify:** Publish completes; latest version loads in the target channel.
+**See also:** [B2 (other publish failures)](#b2--save-or-publish-fails) · [02 § I1 Authentication loop](./02-intermediate.md#i1--user-is-asked-to-sign-in-repeatedly--auth-loop) · [Troubleshooting hub](https://learn.microsoft.com/en-us/troubleshoot/power-platform/copilot-studio/welcome-copilot-studio)
 
 ---
 

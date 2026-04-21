@@ -13,73 +13,58 @@ You're integrating Copilot Studio with the broader Azure AI stack: **MCP tools, 
 4. **Inspect the dependency** at its source (AI Search query, Foundry agent run, MCP server logs, fine-tuned deployment metrics).
 5. **Iterate on instructions / prompts** *only after* the data flow above is verified — otherwise you'll be tuning prompts to compensate for a broken integration.
 
-<!--
-Source: optional screenshot showing orchestrator trace + App Insights dependency chart side by side.
-Filename: images/03-advanced-diagnostic-flow.png
--->
-
 ## Deep-dive: parsing a snapshot with Copilot Studio Trace Viewer
 
-The [Test pane snapshot](./00-diagnostic-toolbox.md#download-a-test-pane-snapshot) you downloaded is a `botContent.zip` containing two files:
+The [Test pane snapshot](./00-diagnostic-toolbox.md#download-a-test-pane-snapshot) (`botContent.zip`) contains `dialog.json` (full orchestrator trace) and `botContent.yml` (agent definition). Use this section when you need to understand **why the agent chose a specific tool, source, or response** for a given turn.
 
-| File | What it is |
-|---|---|
-| `dialog.json` | The full orchestrator trace for the conversation: every activity, plan, tool call, knowledge lookup, AI thought, and response. |
-| `botContent.yml` | The agent's definition: topics, tools, instructions, variables, connectors, GPT settings. |
+### Copilot Studio Trace Viewer
 
-Reading `dialog.json` by hand is doable for a single turn but quickly becomes painful. The community-built **[Copilot Studio Trace Viewer](https://github.com/rquattros/CopilotStudioTraceViewer)** parses the snapshot and gives you, in a single offline page (no install, no server, no dependency):
+The **[Copilot Studio Trace Viewer](https://rquattros.github.io/CopilotStudioTraceViewer/)** ([GitHub](https://github.com/rquattros/CopilotStudioTraceViewer)) is a community-built, browser-only tool that parses these files and displays: activity timeline, performance waterfall, knowledge sources, variable tracker, topic flow, and error highlights. Nothing is uploaded to a server.
 
-- **Activity timeline** colour-coded by type (user/bot message, plan, thought, tool call, search, error) with the agent's full plan tree.
-- **Friendly topic / tool names** resolved from `botContent.yml` (instead of raw schema GUIDs).
-- **Performance waterfall** to spot the slow step (often a tool call or AI Search).
-- **Knowledge Sources panel** \u2014 search results, query rewrites, citation mapping, token counts, model name, for any `GenerativeAnswersSupportData` activity.
-- **Variable Tracker** \u2014 inputs/outputs of every step with AUTO/MANUAL binding badges.
-- **Topic Flow** diagram of orchestrator plans, topic invocations, and connected-agent / Foundry handoffs.
-- **Error banner** that surfaces every error/exception in the trace and jumps you to the failing step.
+<img src="images/03-mcs-trace-viewer.png" width="700">
 
-**Typical workflow:**
+**How to use it:**
 
-1. Reproduce the failing turn in the Test pane and **Save snapshot** (see the [toolbox steps](./00-diagnostic-toolbox.md#download-a-test-pane-snapshot)).
-2. Open the Trace Viewer (clone the repo and open `index.html`, or use a hosted copy you trust).
-3. Drag the `botContent.zip` (or just `dialog.json`) onto the page.
-4. Start with the **Error banner** \u2192 jump to the failing step \u2192 inspect the **Knowledge Sources** / **Variable Tracker** / **Topic Flow** for that turn.
-5. Pair what you see with the conversation id from `/debug conversationId` and your [App Insights](./00-diagnostic-toolbox.md#3-application-insights) query for the same turn.
+1. **Save snapshot** from the Test pane (see [toolbox steps](./00-diagnostic-toolbox.md#download-a-test-pane-snapshot)).
+2. Open [rquattros.github.io/CopilotStudioTraceViewer](https://rquattros.github.io/CopilotStudioTraceViewer/) and drag the `.zip` (or `dialog.json`) onto the page.
+3. Start with the **Error banner** → jump to the failing step → inspect **Knowledge Sources** / **Variable Tracker** / **Topic Flow**.
+4. Pair with the conversation id from `/debug conversationId` and your [App Insights](./00-diagnostic-toolbox.md#3-application-insights) query.
 
-> [!IMPORTANT]
-> The Trace Viewer is a **community project**, not a Microsoft product. The snapshot you upload is parsed entirely **in your browser** \u2014 nothing is sent to a server \u2014 but the underlying file still contains user messages, variable values, and tool outputs. Treat it as sensitive (see the [toolbox sensitivity note](./00-diagnostic-toolbox.md#00--diagnostic-toolbox)) and never paste it into untrusted hosted instances.
 
-The same tool can also load **channel transcripts directly from Dataverse** (Teams, Web Chat, DirectLine, etc.) via an Entra app registration \u2014 useful when the issue only reproduces in a real channel and not in the Test pane. See the project README for the one-time Azure / Dataverse setup.
 
-## Reading a HAR / network trace
+## Deep-dive: reading a HAR / network trace
 
-Once you can capture a HAR (see [Diagnostic toolbox §4](./00-diagnostic-toolbox.md#4-browser-network-trace-har)), the value is in **what you do with it**. Use this section when:
+A HAR file captures every HTTP request the browser made during a session (see [Diagnostic toolbox §4](./00-diagnostic-toolbox.md#4-browser-network-trace-har)). Use this section when you need to identify the **first failing request** in a chain, extract correlation ids for a support ticket, or confirm an auth / RBAC root cause.
 
-- You've reproduced an issue, captured a HAR, and need to know **what to look for**.
-- A support / engineering contact has asked you to share a HAR + correlation ids.
-- The portal returns a generic error and you need to identify the **first failing request** in a chain.
+### pHARser
+
+**[pHARser](https://pharser.azurewebsites.net/)** is a browser-based HAR viewer that presents requests in a structured, filterable format for spotting failures and extracting correlation ids. Nothing is uploaded to a server.
+
+<img src="images/03-pharser.png" width="700">
+
+**How to use it:**
+
+1. Open [pharser.azurewebsites.net](https://pharser.azurewebsites.net/).
+2. Drag your `.har` file onto the page (or use the file picker).
+3. Filter / sort by status code, time, or keyword to find the failing request.
+4. Expand the request to inspect headers (`x-ms-correlation-id`, `x-ms-request-id`), payload, and response body.
 
 ### Signals to scan for first
 
 | Signal | What it usually means | Where to check |
 |---|---|---|
-| **HTTP 401 / 403** on a Copilot Studio API call | Auth or RBAC problem (token expired, missing role on environment, conditional access). | Cross-check with [02 — Intermediate § I3 Connector returns 401 / 403](./02-intermediate.md#i3--connector-returns-401--403). |
+| **HTTP 401 / 403** on a Copilot Studio API call | Auth or RBAC problem (token expired, missing role on environment, conditional access). | Cross-check with [02 — Intermediate § I3 Connector returns 401 / 403](./02-intermediate.md#i3--connector-action-returns-401--403). |
 | **HTTP 404** on an environment-scoped URL | Wrong environment selected, or the resource was deleted / moved. | Look for the environment id (GUID) in the request URL. |
 | **HTTP 429** | Throttling. | Slow the action down; check capacity in [PPAC](./00-diagnostic-toolbox.md#power-platform-admin-center-ppac). |
-| **HTTP 5xx** | Service-side issue. | Capture the `x-ms-correlation-id` / `x-ms-request-id` response header — it's what support will ask for. |
+| **HTTP 5xx** | Service-side issue. | Capture the `x-ms-correlation-id` / `x-ms-request-id` response header. |
 | **CORS errors** in the Console tab | Tenant policy, browser extension, or a third-party domain blocked. | Retry in InPrivate with extensions disabled. |
 | **Request never sent** (no row appears) | Browser extension, content-blocker, or network policy intercepted the click. | Retry in InPrivate, then on a clean network. |
 
 ### Triage workflow
 
-1. **Filter** the request list to `XHR` / `Fetch` and sort by **status code** descending — failed requests bubble to the top.
-2. Find the **first** failing request in time order. Later failures are often cascading effects of the first one.
-3. Open that request and capture:
-   - **Request URL** (note the environment id GUID and any resource id).
-   - **Status code** + **status text**.
-   - Response headers `x-ms-correlation-id`, `x-ms-request-id`, `request-id` — these are the ids support uses to find the same request in service logs.
-   - **Response body** preview if present.
-4. If the failing request is an **auth / token** call (`/oauth2/`, `/.default`, `login.microsoftonline.com`), the root cause is identity, not Copilot Studio — escalate accordingly.
-5. If multiple environments are involved, confirm **all GUIDs in the URLs match** the environment you think you're in.
+1. **Filter** to `XHR` / `Fetch`, sort by **status code** descending, and find the **first** failing request in time order (later failures are usually cascading).
+2. From that request, capture: **Request URL** (note the environment GUID), **status code**, response headers `x-ms-correlation-id` / `x-ms-request-id` / `request-id`, and **response body**.
+3. If the failing request targets `/oauth2/`, `/.default`, or `login.microsoftonline.com`, the root cause is identity, not Copilot Studio.
 
 ### Correlate with conversation telemetry
 
@@ -90,214 +75,167 @@ If the failing action is a **conversation turn** (not a portal click):
 3. In [Application Insights](./00-diagnostic-toolbox.md#3-application-insights), filter by that conversation id and align the `x-ms-correlation-id` from the HAR to the matching dependency call. You now have the **same failure visible from both client and server side**.
 
 > [!IMPORTANT]
-> A HAR contains tokens and cookies. Always **redact or sanitize** before sharing — open the file in a text editor and remove `Authorization`, `Cookie`, and any obvious user identifiers before attaching it to a ticket or pasting it anywhere.
-
-<!--
-Screenshot suggestions:
-- images/03-advanced-har-failed-request.png (failed request expanded with correlation id and response body annotated)
-- images/03-advanced-har-correlation-appinsights.png (HAR correlation id matched in App Insights query result)
--->
+> A HAR contains tokens and cookies. Always **redact or sanitize** before sharing — pHARser has a built-in sanitize function that strips `Authorization`, `Cookie`, and other sensitive headers. Alternatively, open the file in a text editor and remove them manually before attaching to a ticket.
 
 ## Common issues at a glance
 
 | # | Symptom | Likely cause | Jump to |
 |---|---------|--------------|---------|
-| A1 | Generative orchestrator picks the wrong tool / topic | Tool / topic descriptions, instructions, ordering | [A1](#a1--orchestrator-picks-the-wrong-tool) |
-| A2 | MCP tool call fails or returns nothing | MCP server registration, auth, schema | [A2](#a2--mcp-tool-call-fails) |
-| A3 | Azure AI Search returns no / poor results | Index design, query type, semantic config, scoring | [A3](#a3--azure-ai-search-returns-poor-results) |
-| A4 | Foundry IQ agentic retrieval returns empty / wrong sources | Knowledge base scoping, permissions, source routing | [A4](#a4--foundry-iq-agentic-retrieval-issues) |
-| A5 | Custom / fine-tuned model returns errors or off-style answers | Deployment, capacity, prompt drift, dataset quality | [A5](#a5--custom-or-fine-tuned-model-issues) |
-| A6 | Citations are missing or wrong | Grounding off, source not citation-capable, post-processing | [A6](#a6--citations-missing-or-wrong) |
-| A7 | High latency / timeouts on generative answers | Model region, payload size, dependency latency | [A7](#a7--high-latency-or-timeouts) |
-| A8 | Inconsistent answers across runs | Temperature, non-deterministic tools, retrieval variance | [A8](#a8--inconsistent-answers-across-runs) |
-| A9 | Long Teams conversations stop responding / loop | Conversation history exceeds the model's context window | [A9](#a9--long-teams-conversations-stop-responding--loop-token-limit) |
+| A1 | MCP tool call fails or returns nothing | MCP server registration, auth, schema | [A1](#a1--mcp-tool-call-fails) |
+| A2 | Azure AI Search returns no / poor results | Index design, query type, semantic config, scoring | [A2](#a2--azure-ai-search-returns-poor-results) |
+| A3 | Foundry IQ agentic retrieval returns empty / wrong sources | Knowledge base scoping, permissions, source routing | [A3](#a3--foundry-iq-agentic-retrieval-issues) |
+| A4 | Custom / fine-tuned model returns errors or off-style answers | Deployment, capacity, prompt drift, dataset quality | [A4](#a4--custom-or-fine-tuned-model-issues) |
+| A5 | Citations are missing or wrong | Grounding off, source not citation-capable, post-processing | [A5](#a5--citations-missing-or-wrong) |
+| A6 | High latency / timeouts on generative answers | Model region, payload size, dependency latency | [A6](#a6--high-latency-or-timeouts) |
+| A7 | Inconsistent answers across runs | Temperature, non-deterministic tools, retrieval variance | [A7](#a7--inconsistent-answers-across-runs) |
+| A8 | Long Teams conversations stop responding / loop | Conversation history exceeds the model's context window | [A8](#a8--long-teams-conversations-stop-responding--loop-token-limit) |
 
 ---
 
-## A1 — Orchestrator picks the wrong tool
+## A1 — MCP tool call fails
 
-<!--
-Source brief — please provide:
-- Symptom: user asks X → agent calls tool Y instead of expected tool / topic.
-- Reproduce in Test pane: yes — capture the trace.
-- Likely causes:
-  - Tool / topic description is vague or overlapping.
-  - Agent instructions don't disambiguate.
-  - Two tools have similar names; orchestrator picks the first match.
-- Step-by-step fix:
-  1. Open the Activity map and click **Show rationale** on the failing step (toolbox §2).
-  2. Read "candidate tools" + "selected tool + reason".
-  3. Tighten the description and / or add disambiguating instructions.
-  4. Re-test.
-- Verify: trace shows the expected tool selected with a clear reason.
-- Screenshots:
-  - images/03-advanced-a1-trace-wrong-tool.png
-  - images/03-advanced-a1-tool-description-edit.png
-- Related links: Lab 1.2 Tools, Lab 1.3 MCP.
--->
+MCP-backed tool returns an error, empty result, or "tool not available". The MCP server handshake completes but tools are never discovered. *(Reproduce in the Test pane; check the [Activity map](./00-diagnostic-toolbox.md#2-activity-map) for the tool-call step and [App Insights](./00-diagnostic-toolbox.md#3-application-insights) for the dependency call.)*
 
-## A2 — MCP tool call fails
 
-<!--
-Source brief — please provide:
-- Symptom: MCP-backed tool returns an error, empty result, or "tool not available".
-- Likely causes:
-  - MCP server not reachable from the agent's network path.
-  - Auth (API key / OAuth) misconfigured.
-  - Tool schema (input/output) mismatch.
-  - MCP server version/feature mismatch.
-- Step-by-step fix.
-- Verify: round-trip succeeds in Test pane and App Insights shows a successful dependency call.
-- Screenshots:
-  - images/03-advanced-a2-mcp-tool-error.png
-  - images/03-advanced-a2-mcp-server-logs.png
-- Related links:
-  - Lab 1.3 MCP: ../../labs/1.3-MCP/1.3-MCP.md
--->
 
-## A3 — Azure AI Search returns poor results
+**Diagnose & fix.**
 
-<!--
-Source brief — please provide:
-- Symptom: agent answer is generic, unrelated, or grounded on the wrong document.
-- Likely causes:
-  - Index design (chunk size, fields, vector vs. keyword).
-  - Query type (simple vs. semantic vs. hybrid).
-  - Missing semantic configuration.
-  - Scoring profile / freshness boost missing.
-- Step-by-step fix:
-  1. Reproduce the same query directly in the AI Search Explorer in Azure portal.
-  2. Compare results to what the agent received.
-  3. Adjust query type / semantic config / chunking; re-index if needed.
-- Verify: same question in Test pane returns a relevant, well-grounded answer with the right citation.
-- Screenshots:
-  - images/03-advanced-a3-search-explorer.png
-  - images/03-advanced-a3-semantic-config.png
-- Related links:
-  - Lab 1.4: ../../labs/1.4-ai-search/1.4-ai-search.md
-  - Lab 2.1: ../../labs/2.1-ai-search-advanced/2.1-ai-search-advanced.md
-  - Lab 2.3: ../../labs/2.3-ai-search-sharepoint-indexer/
--->
+1. **MCP protocol compliance** — Copilot Studio expects servers to follow the current MCP spec and support **Streamable HTTP (SSE)**. Non-streaming HTTP servers can silently fail on first tool discovery. Use the [**MCP Inspector**](https://github.com/modelcontextprotocol/inspector) (or equivalent client) to confirm `tools/list` returns your tools before connecting to Copilot Studio.
+<img src="images/03-mcp-inspector.png" width="700">
+2. **Tool schema constraints** — Copilot Studio filters out tools with reference types, multi-type arrays, or unsupported enum handling. Fixing schema definitions often makes tools appear immediately.
+3. **Auth mismatch** — API-key and OAuth setups are sensitive to header-name casing and redirect URIs. Several MCP failures trace back to small auth config mismatches — double-check the exact header name and redirect URL.
+4. **Server unreachable** — Confirm the MCP server endpoint is reachable from the agent's network path (no firewall / VNet blocking outbound calls).
 
-## A4 — Foundry IQ agentic retrieval issues
+**Verify:** tool call round-trips successfully in the Test pane and App Insights shows a `200` dependency call.
+**See also:** [Add an MCP tool](https://learn.microsoft.com/en-us/microsoft-copilot-studio/agent-mcp) · [Lab 1.3 — MCP](../../labs/1.3-MCP/1.3-MCP.md) · [Agent Academy — MCS ❤️ MCP](https://microsoft.github.io/agent-academy/special-ops/mcs-mcp/)
 
-<!--
-Source brief — please provide:
-- Symptom: agentic retrieval returns empty, wrong source, or only one of the configured KBs.
-- Likely causes:
-  - Knowledge base not scoped / permissioned for the calling identity.
-  - Source routing rules too narrow.
-  - Foundry agent / project misconfiguration.
-- Step-by-step fix:
-  1. Run the same query directly against the Foundry agent (outside Copilot Studio).
-  2. Inspect the planning + retrieval trace in the Foundry project.
-  3. Adjust scoping / permissions / routing.
-- Verify: the same question in Test pane returns the expected source(s) with citations.
-- Screenshots:
-  - images/03-advanced-a4-foundry-trace.png
-  - images/03-advanced-a4-knowledge-base-config.png
-- Related links:
-  - Lab 2.4: ../../labs/2.4-microsoft-foundry-agentic-retrieval/README.md
--->
+---
 
-## A5 — Custom or fine-tuned model issues
+## A2 — Azure AI Search returns poor results
 
-<!--
-Source brief — please provide:
-- Symptom: deployment errors, throttling, or the model's tone / format drifted from training data.
-- Likely causes:
-  - Deployment region / capacity (PTU / TPM limits).
-  - Wrong deployment name selected in Copilot Studio.
-  - Training data drift / overfitting.
-- Step-by-step fix.
-- Verify: model returns expected style and stays under latency budget.
-- Screenshots:
-  - images/03-advanced-a5-model-deployment.png
-- Related links:
-  - Lab 1.5: ../../labs/1.5-custom-models/1.5-custom-models.md
-  - Lab 2.2: ../../labs/2.2-Fine-Tunned-Model/Lab2_CopilotStudio_Text_FineTuned_Model_AzureAIFoundry_PromptTool.md
--->
+> [!NOTE]
+> This section applies when **Azure AI Search** is configured as a knowledge source. If you're using SharePoint, Dataverse, or uploaded documents only, skip it.
 
-## A6 — Citations missing or wrong
+Agent answer is generic, unrelated, or grounded on the wrong document. The index returns results, but they don't match the user's intent. *(Reproduce in the Test pane; inspect the Knowledge Sources panel in the [Trace Viewer](#deep-dive-parsing-a-snapshot-with-copilot-studio-trace-viewer) or run the same query directly in the Azure portal AI Search Explorer.)*
 
-<!--
-Source brief — please provide:
-- Symptom: answer is correct but cites the wrong source, or cites nothing.
-- Likely causes: grounding turned off, source not configured to return citations, post-processing strips them.
-- Step-by-step fix.
-- Verify: every grounded answer in Test pane has the correct citation.
-- Screenshots:
-  - images/03-advanced-a6-citation-toggle.png
--->
+**Diagnose & fix.**
 
-## A7 — High latency or timeouts
+1. **Semantic ranking not enabled** — Semantic ranking is a second-stage reranker and must be explicitly enabled at both the **service** and **index** level. Without it, hybrid or vector queries often look irrelevant in RAG scenarios.
+2. **Semantic configuration wrong** — Ensure the config has one clear **title** field and one or more **content** fields. Avoid mixing metadata-only fields into the content fields.
+3. **Query type mismatch** — Hybrid or vector queries without semantic reranking often return empty or low-quality results. Confirm the query type in Copilot Studio matches what the index was designed for.
+4. **Chunk size / field design** — If captions and answers are consistently bad, the problem is index design (chunk size, field mapping), not the model. Re-index with smaller chunks and verify in the Search Explorer.
 
-<!--
-Source brief — please provide:
-- Symptom: turns take > 8s or hit a timeout.
-- Likely causes:
-  - Model region far from data region.
-  - Large payloads (full documents instead of chunks).
-  - Slow downstream dependency (AI Search, MCP server, flow).
-- Step-by-step fix:
-  1. In App Insights, break down dependency latency for the failing turn.
-  2. Identify the slowest dependency and tune it (region, payload, indexing).
-- Verify: median turn latency back under target.
-- Screenshots:
-  - images/03-advanced-a7-latency-breakdown.png
-- Related links:
-  - Lab 1.7: ../../labs/1.7-monitoring/1.7.1-monitor-agent-with-application-insights.md
--->
+> [!TIP]
+> If captions and answers are bad, the index design is the problem — not the model. Start debugging at the index, not the agent instructions.
 
-## A8 — Inconsistent answers across runs
+**Verify:** same question in the Test pane returns a relevant, well-grounded answer with the correct citation.
+**See also:** [Semantic ranking](https://learn.microsoft.com/en-us/azure/search/semantic-search-overview) · [Lab 1.4 — AI Search](../../labs/1.4-ai-search/1.4-ai-search.md) · [Lab 2.1 — AI Search advanced](../../labs/2.1-ai-search-advanced/2.1-ai-search-advanced.md)
 
-<!--
-Source brief — please provide:
-- Symptom: same question, different answers across attempts.
-- Likely causes: temperature too high, retrieval order changes, tools with non-deterministic outputs.
-- Step-by-step fix:
-  1. Lower temperature / pin model version in instructions.
-  2. Confirm retrieval is deterministic for the same query (top-k stable).
-  3. Add evaluation set to detect regressions.
-- Verify: 5 consecutive runs return the same grounded answer.
-- Screenshots:
-  - images/03-advanced-a8-instructions-tuning.png
--->
+---
 
-## A9 — Long Teams conversations stop responding / loop (token limit)
+## A3 — Foundry IQ agentic retrieval issues
 
-**Symptom.** A long-running conversation in **Microsoft Teams** suddenly stops producing useful answers. The agent may keep "thinking" forever, return errors, or appear to loop. The same agent works fine for **short** conversations (and in the Test pane).
+Agentic retrieval returns empty, wrong source, or only one of the configured knowledge bases. *(Reproduce by running the same query directly against the Foundry agent outside Copilot Studio first, then compare with the Test pane result.)*
 
-**Reproduce in Test pane.** Often **not** reproducible — the Test pane is usually a short, fresh conversation, while the failing Teams session has a long history. Try to reproduce by simulating a long history (paste prior turns) before deciding it's channel-only.
+<img src="images/03-foundry.png" width="700">
 
-**Likely causes.**
+**Diagnose & fix.**
 
-- The **accumulated conversation history exceeds the model's context window (token limit)**. Once the prompt + history + tools metadata + grounded content overflows, the model fails or behaves erratically.
-- This is more likely on agents using **older / smaller-context models** or with very verbose tool / knowledge outputs.
+1. **RBAC and permissions** — Foundry IQ relies on Azure AI Search permissions. The calling identity must have **Search Index Data Reader** access on the underlying index. Empty responses often mean no eligible source passed security filtering.
+2. **Knowledge base composition** — Confirm the knowledge base actually includes the intended sources and that indexing has completed. Check the Foundry project for indexing status.
+3. **Retrieval reasoning level** — Agentic retrieval performs iterative search only when **medium or higher** reasoning effort is enabled. Minimal mode can return sparse or empty results.
+4. **Source routing** — If only one of several KBs returns results, check scoping rules in the Foundry agent configuration.
 
-**Step-by-step fix.**
+**Verify:** same question in the Test pane returns the expected source(s) with citations.
+**See also:** [Agentic retrieval overview](https://learn.microsoft.com/en-us/azure/ai-services/agents/concepts/agents-retrieval) · [Lab 2.4 — Foundry IQ agentic retrieval](../../labs/2.4-microsoft-foundry-agentic-retrieval/README.md)
 
-1. **Confirm it's history-driven**: ask the user to start a **new chat** in Teams. If the issue disappears, it's a context-window problem.
-2. **Reduce per-turn payload size**:
-   - Trim long system instructions; move static content to knowledge sources instead of instructions.
-   - For tools, return the smallest useful payload (project the fields you need, not the whole record).
-   - For knowledge, prefer **chunked retrieval with citations** over passing whole documents.
-3. **Use a model with a larger context window** for that agent if available.
-4. **Plan for history compaction**: newer Copilot Studio runtime versions can compact older turns automatically for newer models. Keep the agent on the latest model and runtime to benefit from this.
-5. As a workaround for affected users, advise them to **start a new Teams chat** for unrelated topics rather than continuing one long thread.
+---
 
-**Verify.** A long simulated conversation no longer fails; per-turn token counts (visible in [Application Insights](./00-diagnostic-toolbox.md#3-application-insights)) stay comfortably below the model limit.
+## A4 — Custom or fine-tuned model issues
 
-**Related links.**
+Custom or fine-tuned model returns deployment errors, throttling, or off-style answers that don't match training data expectations. *(Reproduce in the Test pane; check [App Insights](./00-diagnostic-toolbox.md#3-application-insights) for the model dependency call status and latency.)*
 
-- [A7 — High latency or timeouts](#a7--high-latency-or-timeouts) (often correlated with large payloads).
-- [Lab 1.5 — Custom models](../../labs/1.5-custom-models/1.5-custom-models.md).
+**Diagnose & fix.**
 
-<!--
-Screenshot suggestions:
-- images/03-advanced-a9-teams-long-conversation-error.png
-- images/03-advanced-a9-token-usage-appinsights.png
--->
+1. **Wrong deployment selected** — Verify the deployment name and region in the agent's model configuration match the actual Azure AI Foundry deployment.
+2. **Off-style answers** — Most often caused by ambiguous or low-quality training data, not the model itself. Re-evaluate training examples for consistency in tone, format, and expected output.
+3. **No temperature control** — Copilot Studio does not expose temperature or model knobs. Response shaping must be done via **instructions and grounding**, not model parameters.
+4. **Capacity / throttling** — Check PTU / TPM limits on the deployment. If requests are throttled, scale the deployment or reduce per-turn payload size.
+
+**Verify:** model returns the expected style and stays under latency budget in the Test pane.
+**See also:** [Use custom models](https://learn.microsoft.com/en-us/microsoft-copilot-studio/advanced-custom-models) · [Lab 1.5 — Custom models](../../labs/1.5-custom-models/1.5-custom-models.md) · [Lab 2.2 — Fine-tuned model](../../labs/2.2-Fine-Tunned-Model/Lab2_CopilotStudio_Text_FineTuned_Model_AzureAIFoundry_PromptTool.md)
+
+---
+
+## A5 — Citations missing or wrong
+
+Answer is correct but cites the wrong source, or shows no citations at all. *(Reproduce in the **Copilot Studio Test pane** first — some Teams and Power Apps surfaces don't render citations even when they exist.)*
+
+**Diagnose & fix.**
+
+1. **Grounding disabled** — Confirm grounding is enabled in the generative response node.
+2. **Source not citation-capable** — Only some knowledge sources support citations (SharePoint, AI Search, uploaded docs). Verify the source type.
+3. **Multi-agent orchestration** — In multi-agent setups, parent agents do **not** automatically inherit citations from child agents. This is a documented limitation.
+4. **Channel rendering** — If citations appear in the Test pane but not in Teams, it's a channel rendering limitation, not a missing citation.
+
+**Verify:** every grounded answer in the Test pane has the correct citation.
+**See also:** [Knowledge sources](https://learn.microsoft.com/en-us/microsoft-copilot-studio/knowledge-copilot-studio) · [Generative answers node](https://learn.microsoft.com/en-us/microsoft-copilot-studio/nlu-boost-node)
+
+---
+
+## A6 — High latency or timeouts
+
+Turns take > 8 s or hit a timeout. External dependencies (flows, connectors, search) or large payloads are the usual suspects. *(Reproduce in the Test pane; in [App Insights](./00-diagnostic-toolbox.md#3-application-insights), break down dependency latency for the failing turn.)*
+
+**Diagnose & fix.**
+
+1. **Identify the slow dependency** — In App Insights, find the dependency call with the highest duration for that conversation turn (AI Search, MCP server, flow, custom model).
+2. **Prefer direct connectors or HTTP nodes** — Power Automate adds overhead. If the action is a simple API call, a direct connector or HTTP request node is faster.
+3. **Minimize external calls per turn** — Each outbound call adds latency. Consolidate where possible.
+4. **Cross-region calls** — Model region far from data region adds network latency. Align regions where possible.
+
+> [!NOTE]
+> 20–30 seconds is not unusual for SharePoint-grounded or multi-source agents. If you can't reduce latency further, use a user-facing **"working on it"** message for long operations.
+
+**Verify:** median turn latency is back under target in App Insights.
+**See also:** [Monitor with Application Insights](https://learn.microsoft.com/en-us/microsoft-copilot-studio/advanced-bot-framework-composer-capture-telemetry) · [Lab 1.7 — Monitoring](../../labs/1.7-monitoring/1.7.1-monitor-agent-with-application-insights.md)
+
+---
+
+## A7 — Inconsistent answers across runs
+
+Same question, different answers across attempts. Non-deterministic retrieval, multiple competing knowledge sources, or platform-default temperature settings. *(Reproduce by running the same prompt 5 times in the Test pane and comparing results.)*
+
+**Diagnose & fix.**
+
+1. **Permission-scoped results** — SharePoint and Dataverse knowledge sources are **security-trimmed**: each user only sees documents they have access to. If two users ask the same question and get different answers, compare their permissions on the underlying files before investigating further.
+2. **Disable default agent knowledge** — If you only want results from your own sources, disable the built-in agent knowledge base so it doesn't compete with your configured sources.
+3. **Narrow knowledge sources** — The more sources compete, the more retrieval order varies. Reduce to the minimum set needed.
+4. **Add explicit instructions** — Add guardrails such as *"Answer only from provided sources and say 'not found' otherwise"* to reduce hallucination variance.
+
+> [!IMPORTANT]
+> Inconsistency is expected behavior in LLMs. Copilot Studio currently prioritizes helpfulness over determinism. The steps above reduce variance but won't eliminate it entirely.
+
+**Verify:** 5 consecutive runs return substantively the same grounded answer.
+**See also:** [Agent instructions](https://learn.microsoft.com/en-us/microsoft-copilot-studio/guidance/build-generative-ai-copilot) · [Knowledge sources](https://learn.microsoft.com/en-us/microsoft-copilot-studio/knowledge-copilot-studio)
+
+---
+
+## A8 — Long Teams conversations stop responding / loop (token limit)
+
+Long-running Teams conversation suddenly stops producing useful answers — the agent keeps "thinking", returns errors, loops, or "forgets" earlier facts. Short conversations and the Test pane work fine. *(Often **not** reproducible in the Test pane — try simulating a long history by pasting prior turns before deciding it's channel-only.)*
+
+**Diagnose & fix.**
+
+1. **Confirm it's history-driven** — Ask the user to start a **new chat** in Teams. If the issue disappears, the accumulated conversation history exceeds the model's context window. In the Test pane, type `/debug clearState` to reset conversation state and verify the issue resolves.
+<img src="images/03-clearstate.png" width="500">
+2. **Reduce per-turn payload** — Trim long system instructions (move static content to knowledge sources), return only the fields you need from tools, and prefer chunked retrieval over whole documents.
+3. **Use a larger-context model** if available for that agent.
+4. **Clear conversation history in topics** — In your Copilot Studio topic design, add a **Clear conversation history** system action at the end of completed sessions or task flows. This prevents stale history from accumulating across unrelated interactions.
+<img src="images/03-clear-history.png" width="300">
+
+**Verify:** a long simulated conversation no longer fails; per-turn token counts in [App Insights](./00-diagnostic-toolbox.md#3-application-insights) stay below the model limit.
+**See also:** [A6 — High latency or timeouts](#a6--high-latency-or-timeouts) · [Lab 1.5 — Custom models](../../labs/1.5-custom-models/1.5-custom-models.md)
 
 ---
 
