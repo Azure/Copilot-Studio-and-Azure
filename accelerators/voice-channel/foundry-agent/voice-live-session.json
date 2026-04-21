@@ -1,0 +1,53 @@
+{
+  "_comment": "Template for the session.update event the bridge sends as the first message on the Voice Live WebSocket. The bridge substitutes ${INSTRUCTIONS}, ${VOICE_NAME}, and ${MCS_AGENT_NAME} at runtime. Reference: https://learn.microsoft.com/azure/ai-services/speech-service/voice-live-how-to",
+  "type": "session.update",
+  "session": {
+    "instructions": "${INSTRUCTIONS}",
+    "modalities": ["text", "audio"],
+    "voice": {
+      "name": "${VOICE_NAME}",
+      "type": "azure-standard",
+      "temperature": 0.7,
+      "rate": "1.0"
+    },
+    "input_audio_sampling_rate": 24000,
+    "input_audio_noise_reduction": {
+      "type": "azure_deep_noise_suppression"
+    },
+    "input_audio_echo_cancellation": {
+      "type": "server_echo_cancellation"
+    },
+    "turn_detection": {
+      "type": "azure_semantic_vad",
+      "threshold": 0.5,
+      "silence_duration_ms": 500,
+      "prefix_padding_ms": 300,
+      "remove_filler_words": true,
+      "interrupt_response": true,
+      "create_response": true
+    },
+    "input_audio_transcription": {
+      "model": "azure-speech",
+      "language": "en"
+    },
+    "tool_choice": "auto",
+    "tools": [
+      {
+        "type": "function",
+        "name": "ask_microsoft_learn_assistant",
+        "description": "Forward the user's question to the '${MCS_AGENT_NAME}' Copilot Studio agent, which is grounded in Microsoft Learn documentation via the Microsoft Learn MCP server. ALWAYS call this for any factual Microsoft product, IT, or how-to question. Returns a plain-text answer.",
+        "parameters": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "question": {
+              "type": "string",
+              "description": "The user's question, rephrased as a clear, standalone English sentence (include any context needed for a fresh reader)."
+            }
+          },
+          "required": ["question"]
+        }
+      }
+    ]
+  }
+}

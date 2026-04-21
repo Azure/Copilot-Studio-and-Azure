@@ -1,0 +1,38 @@
+{
+    "$schema": "https://developer.microsoft.com/json-schemas/teams/v1.19/MicrosoftTeams.schema.json",
+    "manifestVersion": "1.19",
+    "version": "1.0.0",
+    "id": "REPLACE-WITH-NEW-GUID",
+    "packageName": "com.microsoft.samples.voice-channel.it-assistant",
+    "developer": {
+        "name": "Your Company",
+        "websiteUrl": "https://REPLACE-WITH-BRIDGE-HOSTNAME",
+        "privacyUrl": "https://REPLACE-WITH-BRIDGE-HOSTNAME/privacy",
+        "termsOfUseUrl": "https://REPLACE-WITH-BRIDGE-HOSTNAME/terms"
+    },
+    "icons": {
+        "color": "color.png",
+        "outline": "outline.png"
+    },
+    "name": {
+        "short": "IT Assistant",
+        "full": "IT Assistant — Voice Live + Copilot Studio"
+    },
+    "description": {
+        "short": "Real-time voice agent backed by Copilot Studio + Microsoft Learn.",
+        "full": "Talk to the IT Assistant for instant, grounded answers from Microsoft Learn. Audio runs through Azure AI Foundry Voice Live; reasoning runs through a Copilot Studio agent with the Microsoft Learn MCP tool."
+    },
+    "accentColor": "#0078D4",
+    "staticTabs": [
+        {
+            "entityId": "it-assistant-voice",
+            "name": "IT Assistant",
+            "contentUrl": "https://REPLACE-WITH-BRIDGE-HOSTNAME/",
+            "websiteUrl": "https://REPLACE-WITH-BRIDGE-HOSTNAME/",
+            "scopes": ["personal"]
+        }
+    ],
+    "devicePermissions": ["media"],
+    "permissions": ["identity", "messageTeamMembers"],
+    "validDomains": ["REPLACE-WITH-BRIDGE-HOSTNAME"]
+}

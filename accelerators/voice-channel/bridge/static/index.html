@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>IT Assistant — Voice Live</title>
+    <style>
+        :root {
+            --accent: #0078d4;
+            --bg: #faf9f8;
+            --fg: #201f1e;
+            --muted: #605e5c;
+            --border: #edebe9;
+        }
+        body {
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            margin: 0;
+            background: var(--bg);
+            color: var(--fg);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-height: 100vh;
+            padding: 2rem 1rem;
+        }
+        h1 { margin: 0 0 0.25rem; font-size: 1.5rem; }
+        p.subtitle { margin: 0 0 1.5rem; color: var(--muted); }
+        button#toggle {
+            padding: 0.9rem 2rem;
+            font-size: 1rem;
+            font-weight: 600;
+            border: 0;
+            border-radius: 999px;
+            background: var(--accent);
+            color: white;
+            cursor: pointer;
+            transition: background 0.15s;
+        }
+        button#toggle:hover { background: #106ebe; }
+        button#toggle[data-state="live"] { background: #d13438; }
+        #status {
+            margin-top: 1rem;
+            min-height: 1.2em;
+            color: var(--muted);
+            font-size: 0.9rem;
+        }
+        #transcript {
+            margin-top: 1.5rem;
+            width: min(640px, 100%);
+            background: white;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 1rem;
+            max-height: 50vh;
+            overflow-y: auto;
+            font-size: 0.95rem;
+        }
+        .turn { margin-bottom: 0.75rem; }
+        .turn .who {
+            font-weight: 600;
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            letter-spacing: 0.03em;
+            color: var(--muted);
+        }
+        .turn.user .who { color: var(--accent); }
+        .turn.assistant .who { color: #107c10; }
+    </style>
+</head>
+<body>
+    <h1>IT Assistant</h1>
+    <p class="subtitle">Ask anything about Microsoft products. Voice powered by Azure AI Foundry.</p>
+    <button id="toggle" data-state="idle">Start talking</button>
+    <div id="status">Click the button and allow microphone access.</div>
+    <div id="transcript" aria-live="polite"></div>
+    <script src="client.js"></script>
+</body>
+</html>

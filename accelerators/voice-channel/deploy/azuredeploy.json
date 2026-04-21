@@ -1,0 +1,442 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "_generator": {
+      "name": "bicep",
+      "version": "0.42.1.51946",
+      "templateHash": "6245105536488169601"
+    }
+  },
+  "parameters": {
+    "baseName": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 18,
+      "metadata": {
+        "description": "Base name for all Azure resources (lowercase, 3-18 chars, no spaces)."
+      }
+    },
+    "location": {
+      "type": "string",
+      "defaultValue": "[resourceGroup().location]",
+      "metadata": {
+        "description": "Azure region. Must be a Voice Live supported region (e.g. swedencentral, eastus2, westus2, centralindia, southeastasia, westeurope)."
+      }
+    },
+    "voiceLiveModel": {
+      "type": "string",
+      "defaultValue": "gpt-realtime-mini",
+      "allowedValues": [
+        "gpt-realtime",
+        "gpt-realtime-mini",
+        "gpt-4o",
+        "gpt-4o-mini",
+        "gpt-4.1",
+        "gpt-4.1-mini",
+        "gpt-5",
+        "gpt-5-mini",
+        "gpt-5-nano",
+        "gpt-5-chat",
+        "phi4-mm-realtime",
+        "phi4-mini"
+      ],
+      "metadata": {
+        "description": "Voice Live model."
+      }
+    },
+    "voiceName": {
+      "type": "string",
+      "defaultValue": "en-US-Ava:DragonHDLatestNeural",
+      "metadata": {
+        "description": "TTS voice used by the IT Assistant."
+      }
+    },
+    "appServicePlanSku": {
+      "type": "string",
+      "defaultValue": "B1",
+      "allowedValues": [
+        "B1",
+        "B2",
+        "P1v3",
+        "P2v3"
+      ],
+      "metadata": {
+        "description": "App Service plan SKU."
+      }
+    },
+    "mcsAgentName": {
+      "type": "string",
+      "defaultValue": "Microsoft Learn Assistant",
+      "metadata": {
+        "description": "Copilot Studio agent display name."
+      }
+    },
+    "bridgeCodeZipUrl": {
+      "type": "string",
+      "defaultValue": "https://github.com/Azure/Copilot-Studio-and-Azure/releases/latest/download/voice-channel-bridge.zip",
+      "metadata": {
+        "description": "Public URL that the bridge-code deployment script will curl. Defaults to the zipped bridge/ folder in this repo."
+      }
+    },
+    "powerPlatformEnvironmentUrl": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Full URL of the target Power Platform environment (e.g. https://contoso.crm.dynamics.com). Leave empty to skip MCS provisioning — you will then create the agent manually via create-agent.ps1."
+      }
+    },
+    "entraTenantId": {
+      "type": "string",
+      "defaultValue": "[tenant().tenantId]",
+      "metadata": {
+        "description": "Entra tenant ID of the service principal. Defaults to the tenant of the Azure subscription."
+      }
+    },
+    "powerPlatformSpnClientId": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Client ID of an Entra SPN that is registered as an Application User with Dataverse System Admin role in the target PP environment. Leave empty to skip MCS provisioning."
+      }
+    },
+    "powerPlatformSpnClientSecret": {
+      "type": "securestring",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Client secret for the SPN. Leave empty to skip MCS provisioning."
+      }
+    }
+  },
+  "variables": {
+    "foundryName": "[format('{0}-foundry', parameters('baseName'))]",
+    "foundryCustomDomain": "[toLower(format('{0}-foundry', parameters('baseName')))]",
+    "appServiceName": "[format('{0}-bridge', parameters('baseName'))]",
+    "appServicePlanName": "[format('{0}-plan', parameters('baseName'))]",
+    "appInsightsName": "[format('{0}-insights', parameters('baseName'))]",
+    "logAnalyticsName": "[format('{0}-logs', parameters('baseName'))]",
+    "provisionMcs": "[and(and(not(empty(parameters('powerPlatformEnvironmentUrl'))), not(empty(parameters('powerPlatformSpnClientId')))), not(empty(parameters('powerPlatformSpnClientSecret'))))]",
+    "cognitiveServicesUserRoleId": "a97b65f3-24c7-4388-baec-2e87135dc908",
+    "azureAIUserRoleId": "53ca6127-db72-4b80-b1b0-d745d6d5456d",
+    "websiteContributorRoleId": "de139f84-1756-47ae-9be6-808fbbe84772",
+    "voiceLiveWsUrl": "[format('wss://{0}.services.ai.azure.com/voice-live/realtime?api-version=2025-10-01&model={1}', variables('foundryCustomDomain'), parameters('voiceLiveModel'))]"
+  },
+  "resources": [
+    {
+      "type": "Microsoft.CognitiveServices/accounts",
+      "apiVersion": "2024-10-01",
+      "name": "[variables('foundryName')]",
+      "location": "[parameters('location')]",
+      "kind": "AIServices",
+      "sku": {
+        "name": "S0"
+      },
+      "identity": {
+        "type": "SystemAssigned"
+      },
+      "properties": {
+        "customSubDomainName": "[variables('foundryCustomDomain')]",
+        "publicNetworkAccess": "Enabled",
+        "disableLocalAuth": false
+      }
+    },
+    {
+      "type": "Microsoft.OperationalInsights/workspaces",
+      "apiVersion": "2023-09-01",
+      "name": "[variables('logAnalyticsName')]",
+      "location": "[parameters('location')]",
+      "properties": {
+        "sku": {
+          "name": "PerGB2018"
+        },
+        "retentionInDays": 30
+      }
+    },
+    {
+      "type": "Microsoft.Insights/components",
+      "apiVersion": "2020-02-02",
+      "name": "[variables('appInsightsName')]",
+      "location": "[parameters('location')]",
+      "kind": "web",
+      "properties": {
+        "Application_Type": "web",
+        "WorkspaceResourceId": "[resourceId('Microsoft.OperationalInsights/workspaces', variables('logAnalyticsName'))]"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.OperationalInsights/workspaces', variables('logAnalyticsName'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.Web/serverfarms",
+      "apiVersion": "2024-04-01",
+      "name": "[variables('appServicePlanName')]",
+      "location": "[parameters('location')]",
+      "kind": "linux",
+      "sku": {
+        "name": "[parameters('appServicePlanSku')]"
+      },
+      "properties": {
+        "reserved": true
+      }
+    },
+    {
+      "type": "Microsoft.Web/sites",
+      "apiVersion": "2024-04-01",
+      "name": "[variables('appServiceName')]",
+      "location": "[parameters('location')]",
+      "kind": "app,linux",
+      "identity": {
+        "type": "SystemAssigned"
+      },
+      "properties": {
+        "serverFarmId": "[resourceId('Microsoft.Web/serverfarms', variables('appServicePlanName'))]",
+        "httpsOnly": true,
+        "siteConfig": {
+          "linuxFxVersion": "PYTHON|3.11",
+          "alwaysOn": "[if(and(not(equals(parameters('appServicePlanSku'), 'F1')), not(equals(parameters('appServicePlanSku'), 'B1'))), true(), false())]",
+          "ftpsState": "Disabled",
+          "minTlsVersion": "1.2",
+          "webSocketsEnabled": true,
+          "appCommandLine": "gunicorn -k uvicorn.workers.UvicornWorker -b 0.0.0.0:8000 -w 2 --timeout 120 app:app",
+          "appSettings": [
+            {
+              "name": "SCM_DO_BUILD_DURING_DEPLOYMENT",
+              "value": "true"
+            },
+            {
+              "name": "ENABLE_ORYX_BUILD",
+              "value": "true"
+            },
+            {
+              "name": "APPINSIGHTS_INSTRUMENTATIONKEY",
+              "value": "[reference(resourceId('Microsoft.Insights/components', variables('appInsightsName')), '2020-02-02').InstrumentationKey]"
+            },
+            {
+              "name": "APPLICATIONINSIGHTS_CONNECTION_STRING",
+              "value": "[reference(resourceId('Microsoft.Insights/components', variables('appInsightsName')), '2020-02-02').ConnectionString]"
+            },
+            {
+              "name": "FOUNDRY_ENDPOINT",
+              "value": "[reference(resourceId('Microsoft.CognitiveServices/accounts', variables('foundryName')), '2024-10-01').endpoint]"
+            },
+            {
+              "name": "FOUNDRY_WEBSOCKET_URL",
+              "value": "[variables('voiceLiveWsUrl')]"
+            },
+            {
+              "name": "VOICE_LIVE_MODEL",
+              "value": "[parameters('voiceLiveModel')]"
+            },
+            {
+              "name": "FOUNDRY_VOICE_NAME",
+              "value": "[parameters('voiceName')]"
+            },
+            {
+              "name": "DIRECTLINE_SECRET",
+              "value": ""
+            },
+            {
+              "name": "MCS_AGENT_NAME",
+              "value": "[parameters('mcsAgentName')]"
+            },
+            {
+              "name": "MCS_TIMEOUT_SECONDS",
+              "value": "20"
+            },
+            {
+              "name": "ALLOWED_ORIGINS",
+              "value": "*"
+            }
+          ]
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Insights/components', variables('appInsightsName'))]",
+        "[resourceId('Microsoft.Web/serverfarms', variables('appServicePlanName'))]",
+        "[resourceId('Microsoft.CognitiveServices/accounts', variables('foundryName'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.Authorization/roleAssignments",
+      "apiVersion": "2022-04-01",
+      "scope": "[resourceId('Microsoft.CognitiveServices/accounts', variables('foundryName'))]",
+      "name": "[guid(resourceId('Microsoft.CognitiveServices/accounts', variables('foundryName')), variables('cognitiveServicesUserRoleId'), resourceId('Microsoft.Web/sites', variables('appServiceName')))]",
+      "properties": {
+        "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', variables('cognitiveServicesUserRoleId'))]",
+        "principalId": "[reference(resourceId('Microsoft.Web/sites', variables('appServiceName')), '2024-04-01', 'full').identity.principalId]",
+        "principalType": "ServicePrincipal"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Web/sites', variables('appServiceName'))]",
+        "[resourceId('Microsoft.CognitiveServices/accounts', variables('foundryName'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.Authorization/roleAssignments",
+      "apiVersion": "2022-04-01",
+      "scope": "[resourceId('Microsoft.CognitiveServices/accounts', variables('foundryName'))]",
+      "name": "[guid(resourceId('Microsoft.CognitiveServices/accounts', variables('foundryName')), variables('azureAIUserRoleId'), resourceId('Microsoft.Web/sites', variables('appServiceName')))]",
+      "properties": {
+        "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', variables('azureAIUserRoleId'))]",
+        "principalId": "[reference(resourceId('Microsoft.Web/sites', variables('appServiceName')), '2024-04-01', 'full').identity.principalId]",
+        "principalType": "ServicePrincipal"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Web/sites', variables('appServiceName'))]",
+        "[resourceId('Microsoft.CognitiveServices/accounts', variables('foundryName'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.ManagedIdentity/userAssignedIdentities",
+      "apiVersion": "2023-01-31",
+      "name": "[format('{0}-deploy-mi', parameters('baseName'))]",
+      "location": "[parameters('location')]"
+    },
+    {
+      "type": "Microsoft.Authorization/roleAssignments",
+      "apiVersion": "2022-04-01",
+      "name": "[guid(resourceGroup().id, variables('websiteContributorRoleId'), resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-deploy-mi', parameters('baseName'))))]",
+      "properties": {
+        "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', variables('websiteContributorRoleId'))]",
+        "principalId": "[reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-deploy-mi', parameters('baseName'))), '2023-01-31').principalId]",
+        "principalType": "ServicePrincipal"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-deploy-mi', parameters('baseName')))]"
+      ]
+    },
+    {
+      "type": "Microsoft.Resources/deploymentScripts",
+      "apiVersion": "2023-08-01",
+      "name": "[format('{0}-deploy-code', parameters('baseName'))]",
+      "location": "[parameters('location')]",
+      "kind": "AzureCLI",
+      "identity": {
+        "type": "UserAssigned",
+        "userAssignedIdentities": {
+          "[format('{0}', resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-deploy-mi', parameters('baseName'))))]": {}
+        }
+      },
+      "properties": {
+        "azCliVersion": "2.60.0",
+        "retentionInterval": "PT1H",
+        "timeout": "PT20M",
+        "cleanupPreference": "OnSuccess",
+        "environmentVariables": [
+          {
+            "name": "ZIP_URL",
+            "value": "[parameters('bridgeCodeZipUrl')]"
+          },
+          {
+            "name": "RG",
+            "value": "[resourceGroup().name]"
+          },
+          {
+            "name": "APP_NAME",
+            "value": "[variables('appServiceName')]"
+          }
+        ],
+        "scriptContent": "      set -euo pipefail\n      echo \"Downloading bridge code from $ZIP_URL ...\"\n      curl -fsSL \"$ZIP_URL\" -o /tmp/bridge.zip || {\n        echo \"WARN: bridge zip not found at $ZIP_URL — skipping code deploy.\"\n        echo \"Run this manually once the zip is published:\"\n        echo \"  az webapp deploy --resource-group $RG --name $APP_NAME --src-url '$ZIP_URL' --type zip\"\n        exit 0\n      }\n      echo \"Deploying to App Service $APP_NAME ...\"\n      az webapp deploy --resource-group \"$RG\" --name \"$APP_NAME\" --src-path /tmp/bridge.zip --type zip\n      echo \"done\"\n    "
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Web/sites', variables('appServiceName'))]",
+        "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-deploy-mi', parameters('baseName')))]",
+        "[resourceId('Microsoft.Authorization/roleAssignments', guid(resourceGroup().id, variables('websiteContributorRoleId'), resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-deploy-mi', parameters('baseName')))))]"
+      ]
+    },
+    {
+      "condition": "[variables('provisionMcs')]",
+      "type": "Microsoft.Resources/deploymentScripts",
+      "apiVersion": "2023-08-01",
+      "name": "[format('{0}-deploy-mcs', parameters('baseName'))]",
+      "location": "[parameters('location')]",
+      "kind": "AzurePowerShell",
+      "identity": {
+        "type": "UserAssigned",
+        "userAssignedIdentities": {
+          "[format('{0}', resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-deploy-mi', parameters('baseName'))))]": {}
+        }
+      },
+      "properties": {
+        "azPowerShellVersion": "11.5",
+        "retentionInterval": "PT1H",
+        "timeout": "PT30M",
+        "cleanupPreference": "OnSuccess",
+        "environmentVariables": [
+          {
+            "name": "PP_ENV_URL",
+            "value": "[parameters('powerPlatformEnvironmentUrl')]"
+          },
+          {
+            "name": "SP_TENANT",
+            "value": "[parameters('entraTenantId')]"
+          },
+          {
+            "name": "SP_CLIENT_ID",
+            "value": "[parameters('powerPlatformSpnClientId')]"
+          },
+          {
+            "name": "SP_SECRET",
+            "secureValue": "[parameters('powerPlatformSpnClientSecret')]"
+          },
+          {
+            "name": "AGENT_NAME",
+            "value": "[parameters('mcsAgentName')]"
+          },
+          {
+            "name": "SCHEMA_NAME",
+            "value": "microsoft_learn_assistant"
+          },
+          {
+            "name": "APP_NAME",
+            "value": "[variables('appServiceName')]"
+          },
+          {
+            "name": "RG",
+            "value": "[resourceGroup().name]"
+          }
+        ],
+        "scriptContent": "      $ErrorActionPreference = \"Stop\"\n\n      Write-Host \"=== Installing pac CLI ===\" -ForegroundColor Cyan\n      try {\n        dotnet tool install --global Microsoft.PowerApps.CLI.Tool | Out-Null\n      } catch {\n        Write-Host \"pac already installed or install returned non-zero; continuing\"\n      }\n      $env:PATH = \"$env:PATH\" + [IO.Path]::PathSeparator + \"$HOME/.dotnet/tools\"\n\n      Write-Host \"`n=== Authenticating pac with SPN ===\" -ForegroundColor Cyan\n      pac auth create `\n        --name \"oneclick\" `\n        --tenant \"$env:SP_TENANT\" `\n        --applicationId \"$env:SP_CLIENT_ID\" `\n        --clientSecret \"$env:SP_SECRET\" `\n        --environment \"$env:PP_ENV_URL\"\n\n      Write-Host \"`n=== Writing agent.yaml ===\" -ForegroundColor Cyan\n      $agentYaml = @\"\nschemaVersion: \"1.0\"\nkind: DeclarativeAgent\nname: \"$env:AGENT_NAME\"\ndescription: Answers Microsoft product and IT-pro questions using Microsoft Learn.\ninstructions: |\n  You are the Microsoft Learn Assistant. Every answer must be grounded in\n  results from the Microsoft Learn MCP tool. Call microsoft_docs_search first,\n  optionally follow up with microsoft_docs_fetch. Cite Learn article titles\n  inline. Keep answers under 6 sentences. Plain prose only — no code fences,\n  no markdown tables, no long URLs (you are frequently called by a voice agent).\naiSettings:\n  generativeMode: enabled\n  temperature: 0.3\ntools:\n  - kind: ModelContextProtocolTool\n    name: \"Microsoft Learn MCP\"\n    server:\n      transport: streamableHttp\n      url: \"https://learn.microsoft.com/api/mcp\"\n      authentication:\n        type: none\nchannels:\n  directLine:\n    enabled: true\n  microsoftTeams:\n    enabled: true\n\"@\n      Set-Content -Path ./agent.yaml -Value $agentYaml -Encoding UTF8\n\n      Write-Host \"`n=== Creating agent '$env:AGENT_NAME' ===\" -ForegroundColor Cyan\n      $created = $false\n      try {\n        pac copilot create --file ./agent.yaml --name \"$env:AGENT_NAME\" --schema-name \"$env:SCHEMA_NAME\"\n        if ($LASTEXITCODE -eq 0) { $created = $true }\n      } catch {\n        Write-Host \"pac copilot create failed, trying fallback verb\"\n      }\n      if (-not $created) {\n        pac copilot new --name \"$env:AGENT_NAME\" --schema-name \"$env:SCHEMA_NAME\"\n        pac copilot update --schema-name \"$env:SCHEMA_NAME\" --file ./agent.yaml\n      }\n\n      Write-Host \"`n=== Publishing agent ===\" -ForegroundColor Cyan\n      pac copilot publish --schema-name \"$env:SCHEMA_NAME\"\n\n      Write-Host \"`n=== Enabling Direct Line channel ===\" -ForegroundColor Cyan\n      pac copilot channel enable --schema-name \"$env:SCHEMA_NAME\" --channel directLine\n      $secretJson = pac copilot channel show-secret --schema-name \"$env:SCHEMA_NAME\" --channel directLine --output json\n      $secret = ($secretJson | ConvertFrom-Json).secret\n\n      if (-not $secret) {\n        throw \"Failed to capture Direct Line secret.\"\n      }\n\n      Write-Host \"`n=== Writing DIRECTLINE_SECRET to App Service '$env:APP_NAME' ===\" -ForegroundColor Cyan\n      az login --identity | Out-Null\n      az webapp config appsettings set `\n        --resource-group \"$env:RG\" `\n        --name \"$env:APP_NAME\" `\n        --settings \"DIRECTLINE_SECRET=$secret\" | Out-Null\n\n      $DeploymentScriptOutputs = @{}\n      $DeploymentScriptOutputs['agentName']   = $env:AGENT_NAME\n      $DeploymentScriptOutputs['schemaName']  = $env:SCHEMA_NAME\n      $DeploymentScriptOutputs['secretSet']   = 'true'\n\n      Write-Host \"`n=== Done ===\" -ForegroundColor Green\n    "
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Web/sites', variables('appServiceName'))]",
+        "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-deploy-mi', parameters('baseName')))]",
+        "[resourceId('Microsoft.Authorization/roleAssignments', guid(resourceGroup().id, variables('websiteContributorRoleId'), resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-deploy-mi', parameters('baseName')))))]"
+      ]
+    }
+  ],
+  "outputs": {
+    "foundryName": {
+      "type": "string",
+      "value": "[variables('foundryName')]"
+    },
+    "foundryEndpoint": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.CognitiveServices/accounts', variables('foundryName')), '2024-10-01').endpoint]"
+    },
+    "voiceLiveWebSocketUrl": {
+      "type": "string",
+      "value": "[variables('voiceLiveWsUrl')]"
+    },
+    "bridgeAppName": {
+      "type": "string",
+      "value": "[variables('appServiceName')]"
+    },
+    "bridgeAppHostName": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.Web/sites', variables('appServiceName')), '2024-04-01').defaultHostName]"
+    },
+    "bridgeUrl": {
+      "type": "string",
+      "value": "[format('https://{0}', reference(resourceId('Microsoft.Web/sites', variables('appServiceName')), '2024-04-01').defaultHostName)]"
+    },
+    "bridgePrincipalId": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.Web/sites', variables('appServiceName')), '2024-04-01', 'full').identity.principalId]"
+    },
+    "mcsProvisioned": {
+      "type": "bool",
+      "value": "[variables('provisionMcs')]"
+    }
+  }
+}

@@ -58,7 +58,8 @@ By leveraging the [Solution Accelerators](docs/Solution-Accelerators.md), we can
 - The [Video RAG Accelerator](/accelerators/Video-RAG/) enables intelligent question-and-answer over training videos by automatically extracting video content, transforming it into structured knowledge, and grounding responses in Azure AI Search for use in Copilot Studio.
 - The [Sharepoint Connector Accelerator](/accelerators/sharepoint-connector) enable how to build a bespoke Azure AI Search connector that indexes SharePoint Online content using Microsoft Graph. Running as a timer‑based Azure Function, it automates document retrieval, text extraction, chunking, embedding generation, and pushes enriched content directly into an Azure AI Search index for grounding Copilot Studio experiences.
 - The [Azure Copilot Pricing Accelerator](/accelerators/azure-copilot-pricing) enables GitHub Copilot to fetch real-time Azure retail pricing and estimate Copilot Studio/foundry agent credit consumption directly inside your editor.
-  
+- The [Voice Channel Accelerator](/accelerators/voice-channel) adds a real-time speech-to-speech experience (Azure AI Foundry Voice Live) in front of a Copilot Studio agent, **without requiring the Omnichannel Engagement Hub license**. Ships with a Teams/M365 personal-app package, an "IT Assistant" Foundry voice agent, and a "Microsoft Learn Assistant" MCS agent grounded via the Microsoft Learn MCP server.
+
 # Project Kickoff
 
 - [Best Practices](docs/Best-Practices_decision-tree_for_building_copilot_studio_agent.md): Decision tree and best practices to build an agent.

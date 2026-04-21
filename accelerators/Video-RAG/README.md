@@ -35,7 +35,9 @@ https://github.com/user-attachments/assets/08a26aad-2e44-414e-9f9a-87ec9239c82f
 ### Azure Subscription Requirements
 - Active Azure subscription with sufficient credits
 - Contributor or Owner role on the subscription/resource group
-- Ability to create and manage Azure resources
+- Copilot Studio [tenant and user license](https://learn.microsoft.com/en-us/microsoft-copilot-studio/requirements-licensing) assigned for agent creation and configuration
+- [Dataverse environment](https://learn.microsoft.com/en-us/microsoft-copilot-studio/requirements-licensing#subscription-capacity) for the agent environment
+- Copilot Studio maker role with permissions to create and configure agents
 
 ### Required Azure Services
 
