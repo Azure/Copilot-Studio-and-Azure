@@ -21,7 +21,14 @@ This enables your Copilot to answer questions based on video content, not just t
 ### Video Walkthrough
 
 
-https://www.youtube.com/watch?v=Wt3s8T8bBq0
+<p align="center">
+  <a href="https://www.youtube.com/watch?v=Wt3s8T8bBq0">
+    <img src="https://img.youtube.com/vi/Wt3s8T8bBq0/0.jpg" alt="Walkthrough Video RAG">
+  </a>
+</p>
+
+<p align="center"><b>Walkthrough Video RAG</b></p>
+
 
 ### Design
 
