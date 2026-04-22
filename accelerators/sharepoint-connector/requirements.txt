@@ -124,7 +124,7 @@ pyparsing==3.3.2
     # via oletools
 python-docx==1.2.0
     # via sharepoint-connector
-python-dotenv==1.2.1
+python-dotenv==1.2.2
     # via sharepoint-connector
 python-pptx==1.0.2
     # via sharepoint-connector
