@@ -20,7 +20,8 @@ This enables your Copilot to answer questions based on video content, not just t
 
 ### Video Walkthrough
 
-https://github.com/user-attachments/assets/08a26aad-2e44-414e-9f9a-87ec9239c82f
+
+https://www.youtube.com/watch?v=Wt3s8T8bBq0
 
 ### Design
 
