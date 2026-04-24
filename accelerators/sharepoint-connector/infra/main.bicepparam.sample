@@ -1,10 +1,16 @@
 using './main.bicep'
 
 // ============================================================================
-// The ONLY five values a deployer needs to supply.
+// Two required values — everything else is defaulted or created by the
+// template itself (including the Entra app registration for /api/search,
+// declared via the Microsoft Graph Bicep extension).
+//
+// `tenantId` is inferred from the deployment context (subscription().tenantId).
+// `apiAudience` is generated during deployment and surfaced as an output.
 // Everything else (Search SKU, Foundry, Document Intelligence, Key Vault,
-// backup schedule, concurrency, processing modes, file extensions, etc.)
-// is created / defaulted inside main.bicep.
+// processing modes, concurrency, backup schedule, file extensions, etc.)
+// is hardcoded in main.bicep and can be tuned post-deployment via Function
+// App settings.
 // ============================================================================
 
 // Resource-name prefix (3–16 chars, lowercase letters / digits / hyphens).
@@ -12,19 +18,11 @@ using './main.bicep'
 // globally-unique names (Search / Foundry / DocIntel / Storage / Key Vault).
 param baseName = 'sp-indexer'
 
-// Leave empty to use the resource group's region, or pin to a specific
+// Leave as-is to use the resource group's region, or pin to a specific
 // Azure AI Vision multimodal-4.0-supported region.
 param location = 'swedencentral'
 
-// Microsoft Entra tenant ID (Graph API authority).
-param tenantId = '00000000-0000-0000-0000-000000000000'
-
 // The SharePoint site the connector will monitor.
-// (Grant this MI `Sites.Selected` on just this site — see
-//  infra/grant-site-permission.ps1 — after deployment.)
+// (Grant the Function's managed identity `Sites.Selected` on just this
+//  site via infra/grant-site-permission.ps1 after deployment.)
 param sharePointSiteUrl = 'https://yourcompany.sharepoint.com/sites/YourSite'
-
-// Application (client) ID of the Entra app registration that represents the
-// /api/search endpoint. Copilot Studio requests tokens for this audience via
-// the OnKnowledgeRequested topic. Bare GUID OR an `api://<clientId>` URI.
-param apiAudience = '00000000-0000-0000-0000-000000000000'

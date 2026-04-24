@@ -1,11 +1,12 @@
 {
   "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "languageVersion": "2.0",
   "contentVersion": "1.0.0.0",
   "metadata": {
     "_generator": {
       "name": "bicep",
       "version": "0.42.1.51946",
-      "templateHash": "7838998199233307517"
+      "templateHash": "1293425673372803386"
     }
   },
   "parameters": {
@@ -24,33 +25,15 @@
         "description": "Azure region. Pick one that supports Azure AI Vision multimodal 4.0 (see Microsoft Learn for the current list)."
       }
     },
-    "tenantId": {
-      "type": "string",
-      "metadata": {
-        "description": "Microsoft Entra tenant ID (Graph API authority for the SharePoint site)."
-      }
-    },
     "sharePointSiteUrl": {
       "type": "string",
       "metadata": {
         "description": "Full SharePoint site URL the connector will monitor, e.g. https://contoso.sharepoint.com/sites/YourSite"
       }
-    },
-    "apiAudience": {
-      "type": "string",
-      "metadata": {
-        "description": "Application (client) ID of the Entra app registration that represents the /api/search endpoint. Copilot Studio requests tokens for this audience via the OnKnowledgeRequested topic. Use the client ID GUID OR the App ID URI (e.g. api://<clientId>)."
-      }
-    },
-    "packageReleaseUrl": {
-      "type": "string",
-      "defaultValue": "https://github.com/Azure/Copilot-Studio-and-Azure/releases/download/sharepoint-connector-latest/sharepoint-connector.zip",
-      "metadata": {
-        "description": "Public URL of the CI-built function-app zip. The deployment seeds it into the Function App storage container so no post-deploy `func publish` is needed. Override to point at a fork release URL if the code has been customised."
-      }
     }
   },
   "variables": {
+    "packageReleaseUrl": "https://github.com/Azure/Copilot-Studio-and-Azure/releases/download/sharepoint-connector-latest/sharepoint-connector.zip",
     "searchIndexName": "sharepoint-index",
     "indexerSchedule": "0 0 * * * *",
     "backupSchedule": "0 0 3 * * *",
@@ -100,10 +83,20 @@
     "storageAccountContributorRoleId": "17d1049b-9a84-46fb-8f53-869881c3d3ab",
     "storageQueueDataContributorRoleId": "974c5e8b-45b9-4653-ba55-5f855dd0fb88",
     "storageTableDataContributorRoleId": "0a9a7e1f-b9d0-4cc4-a60d-0319b160aaa3",
-    "keyVaultSecretsUserRoleId": "4633458b-17de-408a-b874-0445c86b69e6"
+    "keyVaultSecretsUserRoleId": "4633458b-17de-408a-b874-0445c86b69e6",
+    "apiAppUniqueName": "[format('sharepoint-connector-api-{0}', variables('nameSuffix'))]",
+    "accessAsUserScopeId": "[guid(resourceGroup().id, 'access_as_user')]",
+    "graphAppId": "00000003-0000-0000-c000-000000000000",
+    "groupMemberReadAllRoleId": "98830695-27a2-44f7-8c18-0c3ebc9698f6"
   },
-  "resources": [
-    {
+  "imports": {
+    "microsoftGraphV1_0": {
+      "provider": "MicrosoftGraph",
+      "version": "1.0.0"
+    }
+  },
+  "resources": {
+    "storageAccount": {
       "type": "Microsoft.Storage/storageAccounts",
       "apiVersion": "2023-05-01",
       "name": "[variables('storageName')]",
@@ -119,103 +112,103 @@
         "allowBlobPublicAccess": false
       }
     },
-    {
+    "blobService": {
       "type": "Microsoft.Storage/storageAccounts/blobServices",
       "apiVersion": "2023-05-01",
       "name": "[format('{0}/{1}', variables('storageName'), 'default')]",
       "dependsOn": [
-        "[resourceId('Microsoft.Storage/storageAccounts', variables('storageName'))]"
+        "storageAccount"
       ]
     },
-    {
+    "deployContainer": {
       "type": "Microsoft.Storage/storageAccounts/blobServices/containers",
       "apiVersion": "2023-05-01",
       "name": "[format('{0}/{1}/{2}', variables('storageName'), 'default', variables('deployContainerName'))]",
       "dependsOn": [
-        "[resourceId('Microsoft.Storage/storageAccounts/blobServices', variables('storageName'), 'default')]"
+        "blobService"
       ]
     },
-    {
+    "stateContainer": {
       "type": "Microsoft.Storage/storageAccounts/blobServices/containers",
       "apiVersion": "2023-05-01",
       "name": "[format('{0}/{1}/{2}', variables('storageName'), 'default', variables('stateContainerName'))]",
       "dependsOn": [
-        "[resourceId('Microsoft.Storage/storageAccounts/blobServices', variables('storageName'), 'default')]"
+        "blobService"
       ]
     },
-    {
+    "imagesContainer": {
       "type": "Microsoft.Storage/storageAccounts/blobServices/containers",
       "apiVersion": "2023-05-01",
       "name": "[format('{0}/{1}/{2}', variables('storageName'), 'default', variables('imagesContainerName'))]",
       "dependsOn": [
-        "[resourceId('Microsoft.Storage/storageAccounts/blobServices', variables('storageName'), 'default')]"
+        "blobService"
       ]
     },
-    {
+    "backupContainer": {
       "type": "Microsoft.Storage/storageAccounts/blobServices/containers",
       "apiVersion": "2023-05-01",
       "name": "[format('{0}/{1}/{2}', variables('storageName'), 'default', variables('backupContainerName'))]",
       "dependsOn": [
-        "[resourceId('Microsoft.Storage/storageAccounts/blobServices', variables('storageName'), 'default')]"
+        "blobService"
       ]
     },
-    {
+    "queueService": {
       "type": "Microsoft.Storage/storageAccounts/queueServices",
       "apiVersion": "2023-05-01",
       "name": "[format('{0}/{1}', variables('storageName'), 'default')]",
       "dependsOn": [
-        "[resourceId('Microsoft.Storage/storageAccounts', variables('storageName'))]"
+        "storageAccount"
       ]
     },
-    {
+    "indexerQueue": {
       "type": "Microsoft.Storage/storageAccounts/queueServices/queues",
       "apiVersion": "2023-05-01",
       "name": "[format('{0}/{1}/{2}', variables('storageName'), 'default', variables('indexerQueueName'))]",
       "dependsOn": [
-        "[resourceId('Microsoft.Storage/storageAccounts/queueServices', variables('storageName'), 'default')]"
+        "queueService"
       ]
     },
-    {
+    "indexerPoisonQueue": {
       "type": "Microsoft.Storage/storageAccounts/queueServices/queues",
       "apiVersion": "2023-05-01",
       "name": "[format('{0}/{1}/{2}', variables('storageName'), 'default', variables('indexerPoisonQueueName'))]",
       "dependsOn": [
-        "[resourceId('Microsoft.Storage/storageAccounts/queueServices', variables('storageName'), 'default')]"
+        "queueService"
       ]
     },
-    {
+    "tableService": {
       "type": "Microsoft.Storage/storageAccounts/tableServices",
       "apiVersion": "2023-05-01",
       "name": "[format('{0}/{1}', variables('storageName'), 'default')]",
       "dependsOn": [
-        "[resourceId('Microsoft.Storage/storageAccounts', variables('storageName'))]"
+        "storageAccount"
       ]
     },
-    {
+    "failedFilesTable": {
       "type": "Microsoft.Storage/storageAccounts/tableServices/tables",
       "apiVersion": "2023-05-01",
       "name": "[format('{0}/{1}/{2}', variables('storageName'), 'default', variables('failedFilesTableName'))]",
       "dependsOn": [
-        "[resourceId('Microsoft.Storage/storageAccounts/tableServices', variables('storageName'), 'default')]"
+        "tableService"
       ]
     },
-    {
+    "runStateTable": {
       "type": "Microsoft.Storage/storageAccounts/tableServices/tables",
       "apiVersion": "2023-05-01",
       "name": "[format('{0}/{1}/{2}', variables('storageName'), 'default', variables('runStateTableName'))]",
       "dependsOn": [
-        "[resourceId('Microsoft.Storage/storageAccounts/tableServices', variables('storageName'), 'default')]"
+        "tableService"
       ]
     },
-    {
+    "watermarkTable": {
       "type": "Microsoft.Storage/storageAccounts/tableServices/tables",
       "apiVersion": "2023-05-01",
       "name": "[format('{0}/{1}/{2}', variables('storageName'), 'default', variables('watermarkTableName'))]",
       "dependsOn": [
-        "[resourceId('Microsoft.Storage/storageAccounts/tableServices', variables('storageName'), 'default')]"
+        "tableService"
       ]
     },
-    {
+    "logAnalytics": {
       "type": "Microsoft.OperationalInsights/workspaces",
       "apiVersion": "2023-09-01",
       "name": "[variables('logAnalyticsName')]",
@@ -227,7 +220,7 @@
         "retentionInDays": 30
       }
     },
-    {
+    "appInsights": {
       "type": "Microsoft.Insights/components",
       "apiVersion": "2020-02-02",
       "name": "[variables('appInsightsName')]",
@@ -238,10 +231,10 @@
         "WorkspaceResourceId": "[resourceId('Microsoft.OperationalInsights/workspaces', variables('logAnalyticsName'))]"
       },
       "dependsOn": [
-        "[resourceId('Microsoft.OperationalInsights/workspaces', variables('logAnalyticsName'))]"
+        "logAnalytics"
       ]
     },
-    {
+    "searchService": {
       "type": "Microsoft.Search/searchServices",
       "apiVersion": "2024-06-01-preview",
       "name": "[variables('searchServiceName')]",
@@ -257,7 +250,7 @@
         "semanticSearch": "standard"
       }
     },
-    {
+    "foundryAccount": {
       "type": "Microsoft.CognitiveServices/accounts",
       "apiVersion": "2024-10-01",
       "name": "[variables('foundryAccountName')]",
@@ -274,7 +267,7 @@
         "type": "SystemAssigned"
       }
     },
-    {
+    "docIntel": {
       "type": "Microsoft.CognitiveServices/accounts",
       "apiVersion": "2024-10-01",
       "name": "[variables('docIntelName')]",
@@ -291,7 +284,7 @@
         "type": "SystemAssigned"
       }
     },
-    {
+    "keyVault": {
       "type": "Microsoft.KeyVault/vaults",
       "apiVersion": "2023-07-01",
       "name": "[variables('keyVaultName')]",
@@ -308,28 +301,65 @@
         "publicNetworkAccess": "Enabled"
       }
     },
-    {
+    "apiApp": {
+      "import": "microsoftGraphV1_0",
+      "type": "Microsoft.Graph/applications@v1.0",
+      "properties": {
+        "uniqueName": "[variables('apiAppUniqueName')]",
+        "displayName": "[format('{0} SharePoint Connector API', parameters('baseName'))]",
+        "signInAudience": "AzureADMyOrg",
+        "identifierUris": [
+          "[format('api://{0}', variables('apiAppUniqueName'))]"
+        ],
+        "api": {
+          "oauth2PermissionScopes": [
+            {
+              "id": "[variables('accessAsUserScopeId')]",
+              "value": "access_as_user",
+              "type": "User",
+              "isEnabled": true,
+              "adminConsentDisplayName": "Access SharePoint search on behalf of the signed-in user",
+              "adminConsentDescription": "Allows Copilot Studio (or another delegated caller) to query the SharePoint Connector /api/search endpoint on behalf of the signed-in user. Per-user security trimming is enforced server-side.",
+              "userConsentDisplayName": "Search SharePoint on your behalf",
+              "userConsentDescription": "Allows the app to query the SharePoint Connector as you, returning only documents you have access to."
+            }
+          ]
+        },
+        "requiredResourceAccess": [
+          {
+            "resourceAppId": "[variables('graphAppId')]",
+            "resourceAccess": [
+              {
+                "id": "[variables('groupMemberReadAllRoleId')]",
+                "type": "Role"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "deployerIdentity": {
       "type": "Microsoft.ManagedIdentity/userAssignedIdentities",
       "apiVersion": "2023-01-31",
       "name": "[format('{0}-deployer-{1}', parameters('baseName'), variables('nameSuffix'))]",
       "location": "[parameters('location')]"
     },
-    {
+    "deployerStorageRole": {
       "type": "Microsoft.Authorization/roleAssignments",
       "apiVersion": "2022-04-01",
       "scope": "[resourceId('Microsoft.Storage/storageAccounts', variables('storageName'))]",
       "name": "[guid(resourceId('Microsoft.Storage/storageAccounts', variables('storageName')), variables('storageBlobDataContributorRoleId'), resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-deployer-{1}', parameters('baseName'), variables('nameSuffix'))))]",
       "properties": {
         "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', variables('storageBlobDataContributorRoleId'))]",
-        "principalId": "[reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-deployer-{1}', parameters('baseName'), variables('nameSuffix'))), '2023-01-31').principalId]",
+        "principalId": "[reference('deployerIdentity').principalId]",
         "principalType": "ServicePrincipal"
       },
       "dependsOn": [
-        "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-deployer-{1}', parameters('baseName'), variables('nameSuffix')))]",
-        "[resourceId('Microsoft.Storage/storageAccounts', variables('storageName'))]"
+        "deployerIdentity",
+        "storageAccount"
       ]
     },
-    {
+    "publishCode": {
       "type": "Microsoft.Resources/deploymentScripts",
       "apiVersion": "2023-08-01",
       "name": "[format('{0}-publish-code', parameters('baseName'))]",
@@ -357,7 +387,7 @@
           },
           {
             "name": "PACKAGE_URL",
-            "value": "[parameters('packageReleaseUrl')]"
+            "value": "[variables('packageReleaseUrl')]"
           },
           {
             "name": "PACKAGE_BLOB",
@@ -367,13 +397,13 @@
         "scriptContent": "      set -eu\n      TEMP=$(mktemp -d)\n      cd \"$TEMP\"\n      echo \"Downloading $PACKAGE_URL\"\n      curl -sSL --fail -o package.zip \"$PACKAGE_URL\"\n      echo \"Uploading to $STORAGE_ACCOUNT/$CONTAINER/$PACKAGE_BLOB\"\n      az storage blob upload \\\n        --account-name \"$STORAGE_ACCOUNT\" \\\n        --container-name \"$CONTAINER\" \\\n        --name \"$PACKAGE_BLOB\" \\\n        --file package.zip \\\n        --auth-mode login \\\n        --overwrite\n      echo \"Upload complete.\"\n    "
       },
       "dependsOn": [
-        "[resourceId('Microsoft.Storage/storageAccounts/blobServices/containers', variables('storageName'), 'default', variables('deployContainerName'))]",
-        "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-deployer-{1}', parameters('baseName'), variables('nameSuffix')))]",
-        "[extensionResourceId(resourceId('Microsoft.Storage/storageAccounts', variables('storageName')), 'Microsoft.Authorization/roleAssignments', guid(resourceId('Microsoft.Storage/storageAccounts', variables('storageName')), variables('storageBlobDataContributorRoleId'), resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-deployer-{1}', parameters('baseName'), variables('nameSuffix')))))]",
-        "[resourceId('Microsoft.Storage/storageAccounts', variables('storageName'))]"
+        "deployContainer",
+        "deployerIdentity",
+        "deployerStorageRole",
+        "storageAccount"
       ]
     },
-    {
+    "flexPlan": {
       "type": "Microsoft.Web/serverfarms",
       "apiVersion": "2024-04-01",
       "name": "[format('{0}-plan', parameters('baseName'))]",
@@ -387,7 +417,7 @@
         "reserved": true
       }
     },
-    {
+    "functionApp": {
       "type": "Microsoft.Web/sites",
       "apiVersion": "2024-04-01",
       "name": "[variables('functionAppName')]",
@@ -403,7 +433,7 @@
           "deployment": {
             "storage": {
               "type": "blobContainer",
-              "value": "[format('{0}{1}', reference(resourceId('Microsoft.Storage/storageAccounts', variables('storageName')), '2023-05-01').primaryEndpoints.blob, variables('deployContainerName'))]",
+              "value": "[format('{0}{1}', reference('storageAccount').primaryEndpoints.blob, variables('deployContainerName'))]",
               "authentication": {
                 "type": "SystemAssignedIdentity"
               }
@@ -434,11 +464,11 @@
             },
             {
               "name": "APPLICATIONINSIGHTS_CONNECTION_STRING",
-              "value": "[reference(resourceId('Microsoft.Insights/components', variables('appInsightsName')), '2020-02-02').ConnectionString]"
+              "value": "[reference('appInsights').ConnectionString]"
             },
             {
               "name": "TENANT_ID",
-              "value": "[parameters('tenantId')]"
+              "value": "[subscription().tenantId]"
             },
             {
               "name": "SHAREPOINT_SITE_URL",
@@ -566,7 +596,7 @@
             },
             {
               "name": "API_AUDIENCE",
-              "value": "[parameters('apiAudience')]"
+              "value": "[reference('apiApp').appId]"
             },
             {
               "name": "ALWAYS_ALLOWED_IDS",
@@ -574,155 +604,156 @@
             },
             {
               "name": "KEY_VAULT_URI",
-              "value": "[reference(resourceId('Microsoft.KeyVault/vaults', variables('keyVaultName')), '2023-07-01').vaultUri]"
+              "value": "[reference('keyVault').vaultUri]"
             }
           ]
         }
       },
       "dependsOn": [
-        "[resourceId('Microsoft.Insights/components', variables('appInsightsName'))]",
-        "[resourceId('Microsoft.Web/serverfarms', format('{0}-plan', parameters('baseName')))]",
-        "[resourceId('Microsoft.KeyVault/vaults', variables('keyVaultName'))]",
-        "[resourceId('Microsoft.Resources/deploymentScripts', format('{0}-publish-code', parameters('baseName')))]",
-        "[resourceId('Microsoft.Storage/storageAccounts', variables('storageName'))]"
+        "apiApp",
+        "appInsights",
+        "flexPlan",
+        "keyVault",
+        "publishCode",
+        "storageAccount"
       ]
     },
-    {
+    "searchDataContributorAssignment": {
       "type": "Microsoft.Authorization/roleAssignments",
       "apiVersion": "2022-04-01",
       "scope": "[resourceId('Microsoft.Search/searchServices', variables('searchServiceName'))]",
       "name": "[guid(resourceId('Microsoft.Search/searchServices', variables('searchServiceName')), variables('searchDataContributorRoleId'), resourceId('Microsoft.Web/sites', variables('functionAppName')))]",
       "properties": {
         "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', variables('searchDataContributorRoleId'))]",
-        "principalId": "[reference(resourceId('Microsoft.Web/sites', variables('functionAppName')), '2024-04-01', 'full').identity.principalId]",
+        "principalId": "[reference('functionApp', '2024-04-01', 'full').identity.principalId]",
         "principalType": "ServicePrincipal"
       },
       "dependsOn": [
-        "[resourceId('Microsoft.Web/sites', variables('functionAppName'))]",
-        "[resourceId('Microsoft.Search/searchServices', variables('searchServiceName'))]"
+        "functionApp",
+        "searchService"
       ]
     },
-    {
+    "searchServiceContributorAssignment": {
       "type": "Microsoft.Authorization/roleAssignments",
       "apiVersion": "2022-04-01",
       "scope": "[resourceId('Microsoft.Search/searchServices', variables('searchServiceName'))]",
       "name": "[guid(resourceId('Microsoft.Search/searchServices', variables('searchServiceName')), variables('searchServiceContributorRoleId'), resourceId('Microsoft.Web/sites', variables('functionAppName')))]",
       "properties": {
         "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', variables('searchServiceContributorRoleId'))]",
-        "principalId": "[reference(resourceId('Microsoft.Web/sites', variables('functionAppName')), '2024-04-01', 'full').identity.principalId]",
+        "principalId": "[reference('functionApp', '2024-04-01', 'full').identity.principalId]",
         "principalType": "ServicePrincipal"
       },
       "dependsOn": [
-        "[resourceId('Microsoft.Web/sites', variables('functionAppName'))]",
-        "[resourceId('Microsoft.Search/searchServices', variables('searchServiceName'))]"
+        "functionApp",
+        "searchService"
       ]
     },
-    {
+    "foundryAssignment": {
       "type": "Microsoft.Authorization/roleAssignments",
       "apiVersion": "2022-04-01",
       "scope": "[resourceId('Microsoft.CognitiveServices/accounts', variables('foundryAccountName'))]",
       "name": "[guid(resourceId('Microsoft.CognitiveServices/accounts', variables('foundryAccountName')), variables('cognitiveServicesUserRoleId'), resourceId('Microsoft.Web/sites', variables('functionAppName')))]",
       "properties": {
         "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', variables('cognitiveServicesUserRoleId'))]",
-        "principalId": "[reference(resourceId('Microsoft.Web/sites', variables('functionAppName')), '2024-04-01', 'full').identity.principalId]",
+        "principalId": "[reference('functionApp', '2024-04-01', 'full').identity.principalId]",
         "principalType": "ServicePrincipal"
       },
       "dependsOn": [
-        "[resourceId('Microsoft.CognitiveServices/accounts', variables('foundryAccountName'))]",
-        "[resourceId('Microsoft.Web/sites', variables('functionAppName'))]"
+        "foundryAccount",
+        "functionApp"
       ]
     },
-    {
+    "docIntelAssignment": {
       "type": "Microsoft.Authorization/roleAssignments",
       "apiVersion": "2022-04-01",
       "scope": "[resourceId('Microsoft.CognitiveServices/accounts', variables('docIntelName'))]",
       "name": "[guid(resourceId('Microsoft.CognitiveServices/accounts', variables('docIntelName')), variables('cognitiveServicesUserRoleId'), resourceId('Microsoft.Web/sites', variables('functionAppName')))]",
       "properties": {
         "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', variables('cognitiveServicesUserRoleId'))]",
-        "principalId": "[reference(resourceId('Microsoft.Web/sites', variables('functionAppName')), '2024-04-01', 'full').identity.principalId]",
+        "principalId": "[reference('functionApp', '2024-04-01', 'full').identity.principalId]",
         "principalType": "ServicePrincipal"
       },
       "dependsOn": [
-        "[resourceId('Microsoft.CognitiveServices/accounts', variables('docIntelName'))]",
-        "[resourceId('Microsoft.Web/sites', variables('functionAppName'))]"
+        "docIntel",
+        "functionApp"
       ]
     },
-    {
+    "storageBlobDataOwnerAssignment": {
       "type": "Microsoft.Authorization/roleAssignments",
       "apiVersion": "2022-04-01",
       "scope": "[resourceId('Microsoft.Storage/storageAccounts', variables('storageName'))]",
       "name": "[guid(resourceId('Microsoft.Storage/storageAccounts', variables('storageName')), variables('storageBlobDataOwnerRoleId'), resourceId('Microsoft.Web/sites', variables('functionAppName')))]",
       "properties": {
         "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', variables('storageBlobDataOwnerRoleId'))]",
-        "principalId": "[reference(resourceId('Microsoft.Web/sites', variables('functionAppName')), '2024-04-01', 'full').identity.principalId]",
+        "principalId": "[reference('functionApp', '2024-04-01', 'full').identity.principalId]",
         "principalType": "ServicePrincipal"
       },
       "dependsOn": [
-        "[resourceId('Microsoft.Web/sites', variables('functionAppName'))]",
-        "[resourceId('Microsoft.Storage/storageAccounts', variables('storageName'))]"
+        "functionApp",
+        "storageAccount"
       ]
     },
-    {
+    "storageAccountContributorAssignment": {
       "type": "Microsoft.Authorization/roleAssignments",
       "apiVersion": "2022-04-01",
       "scope": "[resourceId('Microsoft.Storage/storageAccounts', variables('storageName'))]",
       "name": "[guid(resourceId('Microsoft.Storage/storageAccounts', variables('storageName')), variables('storageAccountContributorRoleId'), resourceId('Microsoft.Web/sites', variables('functionAppName')))]",
       "properties": {
         "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', variables('storageAccountContributorRoleId'))]",
-        "principalId": "[reference(resourceId('Microsoft.Web/sites', variables('functionAppName')), '2024-04-01', 'full').identity.principalId]",
+        "principalId": "[reference('functionApp', '2024-04-01', 'full').identity.principalId]",
         "principalType": "ServicePrincipal"
       },
       "dependsOn": [
-        "[resourceId('Microsoft.Web/sites', variables('functionAppName'))]",
-        "[resourceId('Microsoft.Storage/storageAccounts', variables('storageName'))]"
+        "functionApp",
+        "storageAccount"
       ]
     },
-    {
+    "storageQueueDataContributorAssignment": {
       "type": "Microsoft.Authorization/roleAssignments",
       "apiVersion": "2022-04-01",
       "scope": "[resourceId('Microsoft.Storage/storageAccounts', variables('storageName'))]",
       "name": "[guid(resourceId('Microsoft.Storage/storageAccounts', variables('storageName')), variables('storageQueueDataContributorRoleId'), resourceId('Microsoft.Web/sites', variables('functionAppName')))]",
       "properties": {
         "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', variables('storageQueueDataContributorRoleId'))]",
-        "principalId": "[reference(resourceId('Microsoft.Web/sites', variables('functionAppName')), '2024-04-01', 'full').identity.principalId]",
+        "principalId": "[reference('functionApp', '2024-04-01', 'full').identity.principalId]",
         "principalType": "ServicePrincipal"
       },
       "dependsOn": [
-        "[resourceId('Microsoft.Web/sites', variables('functionAppName'))]",
-        "[resourceId('Microsoft.Storage/storageAccounts', variables('storageName'))]"
+        "functionApp",
+        "storageAccount"
       ]
     },
-    {
+    "storageTableDataContributorAssignment": {
       "type": "Microsoft.Authorization/roleAssignments",
       "apiVersion": "2022-04-01",
       "scope": "[resourceId('Microsoft.Storage/storageAccounts', variables('storageName'))]",
       "name": "[guid(resourceId('Microsoft.Storage/storageAccounts', variables('storageName')), variables('storageTableDataContributorRoleId'), resourceId('Microsoft.Web/sites', variables('functionAppName')))]",
       "properties": {
         "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', variables('storageTableDataContributorRoleId'))]",
-        "principalId": "[reference(resourceId('Microsoft.Web/sites', variables('functionAppName')), '2024-04-01', 'full').identity.principalId]",
+        "principalId": "[reference('functionApp', '2024-04-01', 'full').identity.principalId]",
         "principalType": "ServicePrincipal"
       },
       "dependsOn": [
-        "[resourceId('Microsoft.Web/sites', variables('functionAppName'))]",
-        "[resourceId('Microsoft.Storage/storageAccounts', variables('storageName'))]"
+        "functionApp",
+        "storageAccount"
       ]
     },
-    {
+    "keyVaultSecretsUserAssignment": {
       "type": "Microsoft.Authorization/roleAssignments",
       "apiVersion": "2022-04-01",
       "scope": "[resourceId('Microsoft.KeyVault/vaults', variables('keyVaultName'))]",
       "name": "[guid(resourceId('Microsoft.KeyVault/vaults', variables('keyVaultName')), variables('keyVaultSecretsUserRoleId'), resourceId('Microsoft.Web/sites', variables('functionAppName')))]",
       "properties": {
         "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', variables('keyVaultSecretsUserRoleId'))]",
-        "principalId": "[reference(resourceId('Microsoft.Web/sites', variables('functionAppName')), '2024-04-01', 'full').identity.principalId]",
+        "principalId": "[reference('functionApp', '2024-04-01', 'full').identity.principalId]",
         "principalType": "ServicePrincipal"
       },
       "dependsOn": [
-        "[resourceId('Microsoft.Web/sites', variables('functionAppName'))]",
-        "[resourceId('Microsoft.KeyVault/vaults', variables('keyVaultName'))]"
+        "functionApp",
+        "keyVault"
       ]
     }
-  ],
+  },
   "outputs": {
     "functionAppName": {
       "type": "string",
@@ -730,7 +761,7 @@
     },
     "functionAppPrincipalId": {
       "type": "string",
-      "value": "[reference(resourceId('Microsoft.Web/sites', variables('functionAppName')), '2024-04-01', 'full').identity.principalId]"
+      "value": "[reference('functionApp', '2024-04-01', 'full').identity.principalId]"
     },
     "storageAccountName": {
       "type": "string",
@@ -751,6 +782,14 @@
     "keyVaultName": {
       "type": "string",
       "value": "[variables('keyVaultName')]"
+    },
+    "apiAudience": {
+      "type": "string",
+      "value": "[reference('apiApp').appId]"
+    },
+    "apiAppDisplayName": {
+      "type": "string",
+      "value": "[reference('apiApp').displayName]"
     }
   }
 }

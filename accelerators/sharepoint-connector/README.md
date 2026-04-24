@@ -67,47 +67,62 @@ A ~15 minute end-to-end walkthrough — architecture, deployment, post-deploymen
 
 ### Prerequisites and Costs
 
-You only need **two things you must create yourself** before deploying — everything else is provisioned by the Bicep template.
+#### What you supply
 
-| You supply | Why it can't be auto-provisioned |
+| Prerequisite | Why it can't be auto-provisioned |
 |---|---|
 | A **SharePoint Online site** with the content you want indexed | It's your content; nobody else can create it. |
-| An **Entra app registration** for the `/api/search` endpoint — expose an API with an `access_as_user` delegated scope | Copilot Studio's custom OAuth2 connection reference points at this app registration, and the client ID becomes the `apiAudience` parameter. |
+| An **Azure subscription** — Owner or User Access Administrator on the target RG | Template assigns RBAC on seven resources. |
+| An Entra role that includes **`Application.ReadWrite.OwnedBy`** on Microsoft Graph — e.g. **Application Administrator** or **Cloud Application Administrator** | The template declares the `/api/search` app registration via the Microsoft Graph Bicep extension; it runs under the deployer's Graph token. |
 
-…plus a workstation with:
+That's it. The template creates the Entra app registration itself — no separate helper script, no `tenantId` to paste in (it's inferred from the deployment context).
 
-| Tool | Why | Cost |
-|---|---|---|
-| **Azure subscription** with Owner or User Access Administrator on the target RG | Template assigns RBAC on seven resources | — |
-| **Python 3.11+** + **[uv](https://docs.astral.sh/uv/)** | Publish the function code | free |
-| **[Azure CLI](https://learn.microsoft.com/cli/azure/install-azure-cli)** (`az`) | Bicep deployment | free |
-| **[Azure Functions Core Tools v4](https://learn.microsoft.com/azure/azure-functions/functions-run-tools)** (`func`) | Code publish + log streaming | free |
+#### Workstation tools
 
-**The template creates all Azure resources** — Storage Account (with queue / table / blob containers), Log Analytics + App Insights, **Azure AI Search (Basic)**, **Microsoft Foundry / Azure AI Services** (hosts Azure AI Vision multimodal), **Document Intelligence** (Layout), **Key Vault**, Flex Consumption plan, and the Function App. No "pre-existing resource" steps, no searchResourceId / foundryResourceId to paste in.
-
-**Monthly cost signal** (idle, ≈2 000 documents, hourly incremental):
-
-| Resource | Cost signal |
+| Tool | Why |
 |---|---|
-| Azure AI Search (Basic, 1 replica / 1 partition) | ~$75/mo fixed |
-| Function App (Flex Consumption FC1) | a few dollars/mo — scales to zero |
-| Foundry (Azure AI Vision multimodal, S0) | per-call; a few dollars/mo at this volume |
-| Document Intelligence (S0) | per-page; a few dollars/mo at this volume |
-| Storage + Log Analytics + Key Vault | pennies/mo each |
+| **[Azure CLI](https://learn.microsoft.com/cli/azure/install-azure-cli)** (`az`) | Bicep deployment + app-registration creation |
+| **Bicep CLI** (bundled with recent `az`) | Template compilation |
+| PowerShell 7+ | Runs `deploy.ps1` |
 
-Expect **≈$85–$100/mo** at rest. An initial bulk ingest of ~20 000 documents pushes the Foundry + DocIntel bills into tens of dollars **for that one run**.
+No local Python, `uv`, or `func` CLI needed — the function code is pulled from a GitHub Release by the deployment itself.
+
+#### What the template creates
+
+Storage Account (with queue / table / blob containers), Log Analytics + Application Insights, **Azure AI Search (Basic)**, **Microsoft Foundry / Azure AI Services** multi-service (hosts Azure AI Vision multimodal embeddings), **Document Intelligence** (Layout), **Key Vault**, Flex Consumption plan, and the Function App — plus every RBAC assignment on the Function's managed identity. No "pre-existing resource" paste-in.
+
+#### Costs
+
+Every resource below bills independently — click through for the official, up-to-date rates for your region. The shape of the bill is **mostly fixed per month from AI Search + Key Vault + Storage overhead, plus per-call consumption on the AI services during ingestion and query**.
+
+| Resource | Pricing |
+|---|---|
+| Azure AI Search | [Pricing](https://azure.microsoft.com/pricing/details/search/) |
+| Azure AI Services — Vision multimodal embeddings | [Pricing](https://azure.microsoft.com/pricing/details/cognitive-services/computer-vision/) |
+| Azure AI Document Intelligence | [Pricing](https://azure.microsoft.com/pricing/details/ai-document-intelligence/) |
+| Azure Functions (Flex Consumption) | [Pricing](https://azure.microsoft.com/pricing/details/functions/) |
+| Azure Storage | [Pricing](https://azure.microsoft.com/pricing/details/storage/blobs/) |
+| Azure Key Vault | [Pricing](https://azure.microsoft.com/pricing/details/key-vault/) |
+| Azure Monitor (Application Insights + Log Analytics) | [Pricing](https://azure.microsoft.com/pricing/details/monitor/) |
+| Azure Managed Identity | [Pricing](https://azure.microsoft.com/pricing/details/active-directory/) (included with Entra tenant) |
+
+> Need an overall estimate? Plug the resource SKUs into the [Azure pricing calculator](https://azure.microsoft.com/pricing/calculator/).
 
 ### Deployment Options
 
-The template only asks for **five values** — everything else is provisioned and defaulted automatically.
+The template asks for **two values** — everything else is inferred, defaulted, or created by the deployment itself.
 
-| Parameter | What it is |
-|---|---|
-| `baseName` | Resource-name prefix (3–16 chars). A uniqueness hash is appended for globally-unique resources. |
-| `location` | Azure region (default `resourceGroup().location`). Pick one that supports Azure AI Vision multimodal 4.0. |
-| `tenantId` | Microsoft Entra tenant ID. |
-| `sharePointSiteUrl` | Full URL of the SharePoint site to monitor. |
-| `apiAudience` | Application (client) ID of the Entra app registration that represents `/api/search`. Copilot Studio requests tokens for this audience. |
+| Parameter | Required? | What it is |
+|---|---|---|
+| `baseName` | ✅ | Resource-name prefix (3–16 chars). A uniqueness hash is appended for globally-unique resources. |
+| `sharePointSiteUrl` | ✅ | Full URL of the SharePoint site to monitor. |
+| `location` | optional | Azure region (default `resourceGroup().location`). Pick one that supports Azure AI Vision multimodal 4.0. |
+
+Handled by the template itself:
+
+- **Tenant ID** comes from the deployment context (`subscription().tenantId`).
+- **`apiAudience`** — the template declares the `/api/search` Entra app registration via the Microsoft Graph Bicep extension, exposes the `access_as_user` delegated scope, and declares `GroupMember.Read.All` (Application) in the required-resource-access manifest. Admin consent on that Graph permission remains a post-deploy step (see below). The resulting client ID is emitted as the `apiAudience` deployment output.
+- **Function-app package URL** is hardcoded to the latest GitHub Release (`sharepoint-connector-latest`); edit `main.bicep` directly if you want to point at a fork.
 
 #### Automated Deployment
 

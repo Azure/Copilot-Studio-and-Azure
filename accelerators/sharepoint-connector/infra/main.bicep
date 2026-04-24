@@ -10,12 +10,22 @@
 //   * Document Intelligence account (Layout model for PDF/Office extraction)
 //   * Key Vault (for CLIENT_SECRET fallback if the admin adds one later)
 //   * Flex Consumption plan + Function App with system-assigned managed identity
+//   * Entra app registration for the /api/search endpoint — declared via the
+//     Microsoft Graph Bicep extension, so no separate script runs
 //   * Every RBAC role assignment on the MI
 //
 // Required parameters kept to the minimum that's genuinely user-specific.
 // All operational tuning knobs (schedules, concurrency, retention, extensions,
 // processing modes) are set to sensible defaults in this file and can be
 // tweaked post-deployment via Function App settings if needed.
+//
+// Prerequisite permissions on the deployer:
+//   * Azure RBAC: Owner or User Access Administrator on the target RG
+//   * Microsoft Graph: Application.ReadWrite.OwnedBy (so the template can
+//     declare the app registration). Built into Cloud Application
+//     Administrator and Application Administrator directory roles.
+
+extension microsoftGraphV1_0
 
 // ============================================================================
 // Required parameters — user-supplied
@@ -29,21 +39,22 @@ param baseName string
 @description('Azure region. Pick one that supports Azure AI Vision multimodal 4.0 (see Microsoft Learn for the current list).')
 param location string = resourceGroup().location
 
-@description('Microsoft Entra tenant ID (Graph API authority for the SharePoint site).')
-param tenantId string
-
 @description('Full SharePoint site URL the connector will monitor, e.g. https://contoso.sharepoint.com/sites/YourSite')
 param sharePointSiteUrl string
 
-@description('Application (client) ID of the Entra app registration that represents the /api/search endpoint. Copilot Studio requests tokens for this audience via the OnKnowledgeRequested topic. Use the client ID GUID OR the App ID URI (e.g. api://<clientId>).')
-param apiAudience string
-
-@description('Public URL of the CI-built function-app zip. The deployment seeds it into the Function App storage container so no post-deploy `func publish` is needed. Override to point at a fork release URL if the code has been customised.')
-param packageReleaseUrl string = 'https://github.com/Azure/Copilot-Studio-and-Azure/releases/download/sharepoint-connector-latest/sharepoint-connector.zip'
+// NOTE: `apiAudience` is no longer a parameter — the template creates the
+// Entra app registration for /api/search itself (see `apiApp` resource
+// below) and wires its appId directly into the Function App.
 
 // ============================================================================
 // Operational defaults — baked in; override post-deployment via app settings
 // ============================================================================
+
+// CI-built function-app package. Not exposed as a parameter because 99 %
+// of deployers should use the official release; fork-users can edit this
+// line directly OR flip the app setting `WEBSITE_RUN_FROM_PACKAGE`-style
+// override post-deploy.
+var packageReleaseUrl = 'https://github.com/Azure/Copilot-Studio-and-Azure/releases/download/sharepoint-connector-latest/sharepoint-connector.zip'
 
 var searchIndexName = 'sharepoint-index'
 var indexerSchedule = '0 0 * * * *'            // every hour
@@ -284,6 +295,63 @@ resource keyVault 'Microsoft.KeyVault/vaults@2023-07-01' = {
 }
 
 // ============================================================================
+// Entra app registration for /api/search (declarative via Microsoft Graph
+// Bicep extension — no deploymentScript / helper PowerShell needed).
+//
+// Declares:
+//   * `access_as_user` delegated scope (Copilot Studio's custom connector
+//     OAuth2 reference requests this at runtime).
+//   * `GroupMember.Read.All` Microsoft Graph application permission in
+//     requiredResourceAccess — needed by /api/search to resolve transitive
+//     group memberships at query time. Admin consent is a post-deploy
+//     step because consenting to Graph app permissions requires Cloud
+//     Application Administrator or Global Administrator.
+//
+// The deployer needs the Entra role `Application Administrator` (or
+// equivalent — anything that includes `microsoft.directory/applications/
+// createAsOwner` or Graph `Application.ReadWrite.OwnedBy`).
+// ============================================================================
+
+var apiAppUniqueName = 'sharepoint-connector-api-${nameSuffix}'
+var accessAsUserScopeId = guid(resourceGroup().id, 'access_as_user')
+var graphAppId = '00000003-0000-0000-c000-000000000000'
+var groupMemberReadAllRoleId = '98830695-27a2-44f7-8c18-0c3ebc9698f6'
+
+resource apiApp 'Microsoft.Graph/applications@v1.0' = {
+  uniqueName: apiAppUniqueName
+  displayName: '${baseName} SharePoint Connector API'
+  signInAudience: 'AzureADMyOrg'
+  identifierUris: [
+    'api://${apiAppUniqueName}'
+  ]
+  api: {
+    oauth2PermissionScopes: [
+      {
+        id: accessAsUserScopeId
+        value: 'access_as_user'
+        type: 'User'
+        isEnabled: true
+        adminConsentDisplayName: 'Access SharePoint search on behalf of the signed-in user'
+        adminConsentDescription: 'Allows Copilot Studio (or another delegated caller) to query the SharePoint Connector /api/search endpoint on behalf of the signed-in user. Per-user security trimming is enforced server-side.'
+        userConsentDisplayName: 'Search SharePoint on your behalf'
+        userConsentDescription: 'Allows the app to query the SharePoint Connector as you, returning only documents you have access to.'
+      }
+    ]
+  }
+  requiredResourceAccess: [
+    {
+      resourceAppId: graphAppId
+      resourceAccess: [
+        {
+          id: groupMemberReadAllRoleId
+          type: 'Role'
+        }
+      ]
+    }
+  ]
+}
+
+// ============================================================================
 // One-shot code seeding — user-assigned MI + deploymentScript that downloads
 // the CI-built package from GitHub Releases and writes it to the function's
 // deploy container. No post-deploy `func publish` needed.
@@ -395,7 +463,7 @@ resource functionApp 'Microsoft.Web/sites@2024-04-01' = {
         { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', value: appInsights.properties.ConnectionString }
 
         // Connector config
-        { name: 'TENANT_ID', value: tenantId }
+        { name: 'TENANT_ID', value: subscription().tenantId }
         { name: 'SHAREPOINT_SITE_URL', value: sharePointSiteUrl }
         { name: 'SHAREPOINT_LIBRARIES', value: sharePointLibraries }
         { name: 'SHAREPOINT_ROOT_PATHS', value: sharePointRootPaths }
@@ -441,7 +509,7 @@ resource functionApp 'Microsoft.Web/sites@2024-04-01' = {
         { name: 'FORCE_RECREATE_INDEX', value: forceRecreateIndex ? 'true' : 'false' }
 
         // Query-time security trimming (/api/search, called from OnKnowledgeRequested topic)
-        { name: 'API_AUDIENCE', value: apiAudience }
+        { name: 'API_AUDIENCE', value: apiApp.appId }
         { name: 'ALWAYS_ALLOWED_IDS', value: alwaysAllowedIds }
 
         // Reference to the provisioned Key Vault — admins can add CLIENT_SECRET here
@@ -562,3 +630,5 @@ output searchEndpoint string = searchEndpoint
 output foundryEndpoint string = foundryEndpoint
 output docIntelEndpoint string = docIntelEndpoint
 output keyVaultName string = keyVault.name
+output apiAudience string = apiApp.appId
+output apiAppDisplayName string = apiApp.displayName
