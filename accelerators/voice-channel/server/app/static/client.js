@@ -22,6 +22,28 @@ let playCursor = 0;
 let currentAgentTurn = null;   // DOM node being streamed into
 let currentUserTurn = null;
 let cfg = {};
+let inTeams = false;
+
+// ─── Teams host detection ──────────────────────────────────────────────
+//
+// When the page is embedded as a Microsoft Teams tab, the Teams JS SDK
+// reports a live context. Outside Teams the init call rejects and we
+// carry on with the standalone UX.
+(async () => {
+    if (!window.microsoftTeams) return;
+    try {
+        await microsoftTeams.app.initialize();
+        const ctx = await microsoftTeams.app.getContext();
+        inTeams = true;
+        document.body.classList.add("in-teams");
+        document.body.setAttribute("data-teams-theme", ctx?.app?.theme || "default");
+        microsoftTeams.app.registerOnThemeChangeHandler((theme) => {
+            document.body.setAttribute("data-teams-theme", theme);
+        });
+    } catch (_) {
+        // Not running inside Teams — leave body untouched.
+    }
+})();
 
 // ─── Startup ───────────────────────────────────────────────────────────
 

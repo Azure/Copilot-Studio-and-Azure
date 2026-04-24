@@ -1,0 +1,91 @@
+# Copilot Studio — OnKnowledgeRequested topic
+#
+# Intercepts the agent's knowledge-search step and replaces the built-in
+# AI Search call with an HTTP action against this accelerator's /api/search
+# endpoint. The endpoint applies per-user security trimming based on the
+# caller's Entra token, so the LLM only ever sees chunks the current user
+# is authorised for.
+#
+# Requirements
+# ------------
+# * The agent must be in **generative orchestration** mode (classic topic
+#   agents don't expose lifecycle triggers).
+# * This topic's NAME must be exactly `OnKnowledgeRequested` (per Microsoft
+#   docs — the trigger is resolved by name match).
+# * The HTTP action needs an OAuth2 connection reference to your API app
+#   registration (the one whose client ID is the Function App's
+#   `API_AUDIENCE`). Grant it the delegated scope `access_as_user`.
+#
+# Placeholders to fill in before import
+# -------------------------------------
+#   <function-app-hostname>          Your Function App, e.g. sp-indexer-func.azurewebsites.net
+#   <api-oauth-connection-reference> The connection reference name you create
+#                                    in Copilot Studio for OAuth2 to the API
+#                                    app registration.
+#
+# YAML shape follows the Copilot Studio topic-export schema. Exact symbol
+# names vary across Copilot Studio versions; adjust during import if needed.
+
+kind: AdaptiveDialog
+beginDialog:
+  kind: OnKnowledgeRequested
+  id: OnKnowledgeRequested
+  intent: {}
+  actions:
+    # 1) Pick up the search phrase the planner wants to use.
+    - kind: SetVariable
+      id: setQuery
+      variable: Topic.Query
+      value: =System.SearchPhrase
+
+    # 2) Call the backend /api/search endpoint.
+    #    Copilot Studio flows the signed-in user's delegated token when the
+    #    connection reference is configured for OAuth2 (delegated).
+    - kind: SendHttpRequest
+      id: callSearchApi
+      method: POST
+      url: https://<function-app-hostname>/api/search
+      authentication:
+        kind: OAuth
+        connectionReference: <api-oauth-connection-reference>
+      headers:
+        - name: Content-Type
+          value: application/json
+      body: |-
+        ={
+          query: Topic.Query,
+          top: 10
+        }
+      responseSchema: |-
+        {
+          "type": "object",
+          "properties": {
+            "results": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "chunk_id":       { "type": "string" },
+                  "parent_id":      { "type": "string" },
+                  "title":          { "type": "string" },
+                  "url":            { "type": "string" },
+                  "chunk":          { "type": "string" },
+                  "last_modified":  { "type": "string" },
+                  "has_image":      { "type": "boolean" },
+                  "content_path":   { "type": "string" },
+                  "score":          { "type": "number" },
+                  "reranker_score": { "type": "number" }
+                }
+              }
+            }
+          }
+        }
+      responseVariable: Topic.ApiResponse
+
+    # 3) Publish the trimmed result set back to the orchestrator. The LLM
+    #    grounds its response only on these chunks — anything the user
+    #    doesn't have access to was filtered out server-side.
+    - kind: SetVariable
+      id: setResults
+      variable: System.SearchResults
+      value: =Topic.ApiResponse.results

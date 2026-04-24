@@ -1,0 +1,75 @@
+using './main.bicep'
+
+param baseName = 'sp-indexer'
+param location = 'swedencentral'
+
+// --- Fill in your values ---
+param tenantId = '00000000-0000-0000-0000-000000000000'
+param sharePointSiteUrl = 'https://yourcompany.sharepoint.com/sites/YourSite'
+
+// Azure AI Search
+param searchEndpoint = 'https://your-search.search.windows.net'
+param searchResourceId = '/subscriptions/<sub-id>/resourceGroups/<rg>/providers/Microsoft.Search/searchServices/your-search'
+param searchIndexName = 'sharepoint-index'
+
+// Foundry / Azure AI Services — hosts Azure AI Vision multimodal embeddings (required)
+// The Function App's managed identity gets "Cognitive Services User" on this resource.
+param foundryEndpoint = 'https://your-foundry.cognitiveservices.azure.com'
+param foundryResourceId = '/subscriptions/<sub-id>/resourceGroups/<rg>/providers/Microsoft.CognitiveServices/accounts/your-foundry'
+param multimodalModelVersion = '2023-04-15'
+
+// Processing mode
+param processingMode = 'since-last-run'
+param startDate = ''
+
+// Schedule
+param indexerSchedule = '0 0 * * * *'
+
+// --- Document Intelligence (optional) ---
+// Only needed for layout-aware extraction of PDF/DOCX/PPTX/XLSX (paragraphs in
+// reading order, tables, figures with bounding boxes). Standalone image files
+// go direct to Azure AI Vision multimodal — DocIntel not required for those.
+// Leave empty to skip.
+param provisionDocIntel = false
+param docIntelEndpoint = ''
+param docIntelResourceId = ''
+
+// --- Key Vault (optional, only when using CLIENT_SECRET fallback for Graph) ---
+param useClientSecret = false
+param clientSecretValue = ''
+
+// --- Query-time security trimming (/api/search; called by OnKnowledgeRequested topic) ---
+// Expected audience for tokens hitting /api/search. Set to the API app
+// registration's Application (client) ID or App ID URI. Empty = endpoint disabled.
+param apiAudience = ''
+// Optional comma-separated Entra object IDs to implicitly include in every
+// query's identity list (e.g. a tenant-wide 'everyone' group).
+param alwaysAllowedIds = ''
+
+// --- Misc ---
+param imagesContainerName = 'images'
+param extractImages = true
+// DESTRUCTIVE: set to true for ONE deployment after a breaking schema change,
+// then flip back to false. All indexed data is lost.
+param forceRecreateIndex = false
+
+// --- Scoping: point the indexer at a subset of each library ---
+// Empty = whole library. Example: 'Finance/Reports,HR/Policies'
+param sharePointRootPaths = ''
+
+// --- Throughput tuning ---
+// Per-file chunk-vectorisation concurrency. Bounded at source by
+// multimodalMaxInFlight so rate-limit pressure is the same regardless.
+param vectoriseConcurrency = 8
+// Hard ceiling on in-flight Azure AI Vision requests per Function instance.
+// Raise cautiously if you've increased your Vision SKU / TPS quota.
+param multimodalMaxInFlight = 8
+// How often a belt-and-braces full reconciliation scans for orphans.
+// Measured in dispatcher runs; 0 = never. Delta queries handle most deletions
+// in real time; this is a safety net.
+param reconcileEveryNRuns = 24
+
+// --- Index backup ---
+// Nightly export of schema + docs + state to the `backup` container.
+param backupSchedule = '0 0 3 * * *'   // 03:00 UTC daily (6-field NCrontab)
+param backupRetentionDays = 7

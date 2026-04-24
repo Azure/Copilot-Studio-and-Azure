@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.42.1.51946",
-      "templateHash": "12761531461830522080"
+      "templateHash": "8187927393077780231"
     }
   },
   "parameters": {
@@ -37,7 +37,7 @@
     "searchEndpoint": {
       "type": "string",
       "metadata": {
-        "description": "Azure AI Search endpoint (e.g. https://my-search.search.windows.net)"
+        "description": "Azure AI Search endpoint"
       }
     },
     "searchResourceId": {
@@ -56,27 +56,20 @@
     "foundryEndpoint": {
       "type": "string",
       "metadata": {
-        "description": "Azure OpenAI / Foundry endpoint (base URL)"
+        "description": "Microsoft Foundry / Azure AI Services multi-service endpoint. Hosts Azure AI Vision multimodal embeddings (required) and optionally Document Intelligence."
       }
     },
     "foundryResourceId": {
       "type": "string",
       "metadata": {
-        "description": "Azure OpenAI resource ID (for RBAC scope)"
+        "description": "Foundry / Azure AI Services resource ID (for RBAC scope)"
       }
     },
-    "foundryEmbeddingDeployment": {
+    "multimodalModelVersion": {
       "type": "string",
-      "defaultValue": "text-embedding-3-large",
+      "defaultValue": "2023-04-15",
       "metadata": {
-        "description": "Embedding model deployment name"
-      }
-    },
-    "foundryEmbeddingDimensions": {
-      "type": "string",
-      "defaultValue": "1536",
-      "metadata": {
-        "description": "Embedding dimensions"
+        "description": "Azure AI Vision multimodal embeddings model version."
       }
     },
     "indexerSchedule": {
@@ -86,11 +79,23 @@
         "description": "CRON schedule for the indexer (default: every hour)"
       }
     },
-    "incrementalMinutes": {
+    "processingMode": {
       "type": "string",
-      "defaultValue": "60",
+      "defaultValue": "since-last-run",
+      "allowedValues": [
+        "full",
+        "since-date",
+        "since-last-run"
+      ],
       "metadata": {
-        "description": "Incremental sync window in minutes (0 = full reindex)"
+        "description": "Processing mode: full | since-date | since-last-run"
+      }
+    },
+    "startDate": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Absolute start date (ISO-8601 UTC). Only used when processingMode = since-date."
       }
     },
     "sharePointLibraries": {
@@ -102,9 +107,152 @@
     },
     "indexedExtensions": {
       "type": "string",
-      "defaultValue": ".pdf,.docx,.docm,.xlsx,.xlsm,.pptx,.pptm,.txt,.md,.csv,.json,.xml,.kml,.html,.htm,.rtf,.eml,.epub,.msg,.odt,.ods,.odp,.zip,.gz",
+      "defaultValue": ".pdf,.docx,.docm,.xlsx,.xlsm,.pptx,.pptm,.txt,.md,.csv,.json,.xml,.kml,.html,.htm,.rtf,.eml,.epub,.msg,.odt,.ods,.odp,.zip,.gz,.png,.jpg,.jpeg,.tiff,.bmp",
       "metadata": {
-        "description": "File extensions to index"
+        "description": "File extensions to index."
+      }
+    },
+    "maxFileSizeMb": {
+      "type": "string",
+      "defaultValue": "500",
+      "metadata": {
+        "description": "Max file size in MB (files larger than this are skipped)"
+      }
+    },
+    "functionProcessingMode": {
+      "type": "string",
+      "defaultValue": "queue",
+      "allowedValues": [
+        "queue",
+        "inline"
+      ],
+      "metadata": {
+        "description": "Function processing mode: queue (default, scales to >50 files) or inline (legacy single-function)"
+      }
+    },
+    "instanceMemoryMB": {
+      "type": "int",
+      "defaultValue": 4096,
+      "allowedValues": [
+        512,
+        1024,
+        2048,
+        4096
+      ],
+      "metadata": {
+        "description": "Function instance memory in MB (Flex Consumption: 512/1024/2048/4096)"
+      }
+    },
+    "useClientSecret": {
+      "type": "bool",
+      "defaultValue": false,
+      "metadata": {
+        "description": "Use CLIENT_SECRET fallback for Graph API (requires Key Vault). When false, uses managed identity only."
+      }
+    },
+    "clientSecretValue": {
+      "type": "securestring",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Client secret value. Only used when useClientSecret = true. Passed via secure CLI parameter."
+      }
+    },
+    "provisionDocIntel": {
+      "type": "bool",
+      "defaultValue": false,
+      "metadata": {
+        "description": "Provision a new Document Intelligence resource for structured layout extraction. Optional — only PDF/DOCX/PPTX/XLSX benefit. Standalone image files go direct to Azure AI Vision multimodal."
+      }
+    },
+    "docIntelEndpoint": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Existing Document Intelligence endpoint (leave empty to skip; PDF/Office fall back to hand-written extractors)."
+      }
+    },
+    "docIntelResourceId": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Existing Document Intelligence resource ID (for RBAC scope)"
+      }
+    },
+    "imagesContainerName": {
+      "type": "string",
+      "defaultValue": "images",
+      "metadata": {
+        "description": "Blob container name for extracted image crops (citations)."
+      }
+    },
+    "forceRecreateIndex": {
+      "type": "bool",
+      "defaultValue": false,
+      "metadata": {
+        "description": "DESTRUCTIVE: drops and recreates the AI Search index on next run. Set once after a breaking schema change, then revert to false."
+      }
+    },
+    "apiAudience": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Expected audience for tokens hitting the /api/search endpoint. Set to the API app registration client ID (or Application ID URI). When empty, the endpoint is effectively disabled."
+      }
+    },
+    "alwaysAllowedIds": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Always-allowed Entra object IDs. Comma-separated. Useful for tenant-wide share groups."
+      }
+    },
+    "extractImages": {
+      "type": "bool",
+      "defaultValue": true,
+      "metadata": {
+        "description": "Enable image handling (requires foundryEndpoint with Azure AI Vision multimodal available). Default true."
+      }
+    },
+    "sharePointRootPaths": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Optional comma-separated folder paths (relative to each drive root) to scope the indexer to. Empty = whole library. Example: \"Finance/Reports,HR/Policies\"."
+      }
+    },
+    "vectoriseConcurrency": {
+      "type": "int",
+      "defaultValue": 8,
+      "metadata": {
+        "description": "Per-file chunk vectorisation concurrency inside a worker. Bounded at the source by MULTIMODAL_MAX_IN_FLIGHT."
+      }
+    },
+    "multimodalMaxInFlight": {
+      "type": "int",
+      "defaultValue": 8,
+      "metadata": {
+        "description": "Hard ceiling on in-flight Azure AI Vision embedding requests per Function instance (protects the Vision endpoint from overload)."
+      }
+    },
+    "reconcileEveryNRuns": {
+      "type": "int",
+      "defaultValue": 24,
+      "metadata": {
+        "description": "Cadence (in indexer runs) at which a belt-and-braces full reconciliation scans for orphans. 0 = never."
+      }
+    },
+    "backupSchedule": {
+      "type": "string",
+      "defaultValue": "0 0 3 * * *",
+      "metadata": {
+        "description": "CRON schedule for the nightly index backup (default: 03:00 UTC daily)."
+      }
+    },
+    "backupRetentionDays": {
+      "type": "int",
+      "defaultValue": 7,
+      "metadata": {
+        "description": "Number of dated backup folders to keep in the backup container."
       }
     }
   },
@@ -113,15 +261,29 @@
     "storageName": "[replace(format('{0}st', parameters('baseName')), '-', '')]",
     "appInsightsName": "[format('{0}-insights', parameters('baseName'))]",
     "logAnalyticsName": "[format('{0}-logs', parameters('baseName'))]",
+    "keyVaultName": "[take(replace(format('{0}-kv-{1}', parameters('baseName'), uniqueString(resourceGroup().id)), '--', '-'), 24)]",
+    "docIntelName": "[format('{0}-docintel', parameters('baseName'))]",
     "deployContainerName": "app-package",
+    "stateContainerName": "state",
+    "effectiveImagesContainer": "[parameters('imagesContainerName')]",
+    "backupContainerName": "backup",
+    "indexerQueueName": "sp-indexer-q",
+    "indexerPoisonQueueName": "sp-indexer-q-poison",
+    "failedFilesTableName": "failedFiles",
+    "runStateTableName": "runState",
+    "watermarkTableName": "watermark",
     "searchServiceName": "[last(split(parameters('searchResourceId'), '/'))]",
-    "cognitiveAccountName": "[last(split(parameters('foundryResourceId'), '/'))]",
+    "foundryAccountName": "[last(split(parameters('foundryResourceId'), '/'))]",
+    "effectiveDocIntelName": "[if(parameters('provisionDocIntel'), variables('docIntelName'), if(empty(parameters('docIntelResourceId')), '', last(split(parameters('docIntelResourceId'), '/'))))]",
+    "effectiveDocIntelEndpoint": "[if(parameters('provisionDocIntel'), format('https://{0}.cognitiveservices.azure.com', variables('docIntelName')), parameters('docIntelEndpoint'))]",
     "searchDataContributorRoleId": "8ebe5a00-799e-43f5-93ac-243d3dce84a7",
     "searchServiceContributorRoleId": "7ca78c08-252a-4471-8644-bb5ff32d4ba0",
-    "cognitiveServicesOpenAIUserRoleId": "5e0bd9bd-7b93-4f28-af87-19fc36ad61bd",
+    "cognitiveServicesUserRoleId": "a97b65f3-24c7-4388-baec-2e87135dc908",
     "storageBlobDataOwnerRoleId": "b7e6dc6d-f1e8-4753-8033-0f276bb0955b",
     "storageAccountContributorRoleId": "17d1049b-9a84-46fb-8f53-869881c3d3ab",
-    "storageQueueDataContributorRoleId": "974c5e8b-45b9-4653-ba55-5f855dd0fb88"
+    "storageQueueDataContributorRoleId": "974c5e8b-45b9-4653-ba55-5f855dd0fb88",
+    "storageTableDataContributorRoleId": "0a9a7e1f-b9d0-4cc4-a60d-0319b160aaa3",
+    "keyVaultSecretsUserRoleId": "4633458b-17de-408a-b874-0445c86b69e6"
   },
   "resources": [
     {
@@ -136,7 +298,8 @@
       "properties": {
         "minimumTlsVersion": "TLS1_2",
         "supportsHttpsTrafficOnly": true,
-        "allowSharedKeyAccess": false
+        "allowSharedKeyAccess": false,
+        "allowBlobPublicAccess": false
       }
     },
     {
@@ -153,6 +316,86 @@
       "name": "[format('{0}/{1}/{2}', variables('storageName'), 'default', variables('deployContainerName'))]",
       "dependsOn": [
         "[resourceId('Microsoft.Storage/storageAccounts/blobServices', variables('storageName'), 'default')]"
+      ]
+    },
+    {
+      "type": "Microsoft.Storage/storageAccounts/blobServices/containers",
+      "apiVersion": "2023-05-01",
+      "name": "[format('{0}/{1}/{2}', variables('storageName'), 'default', variables('stateContainerName'))]",
+      "dependsOn": [
+        "[resourceId('Microsoft.Storage/storageAccounts/blobServices', variables('storageName'), 'default')]"
+      ]
+    },
+    {
+      "type": "Microsoft.Storage/storageAccounts/blobServices/containers",
+      "apiVersion": "2023-05-01",
+      "name": "[format('{0}/{1}/{2}', variables('storageName'), 'default', variables('effectiveImagesContainer'))]",
+      "dependsOn": [
+        "[resourceId('Microsoft.Storage/storageAccounts/blobServices', variables('storageName'), 'default')]"
+      ]
+    },
+    {
+      "type": "Microsoft.Storage/storageAccounts/blobServices/containers",
+      "apiVersion": "2023-05-01",
+      "name": "[format('{0}/{1}/{2}', variables('storageName'), 'default', variables('backupContainerName'))]",
+      "dependsOn": [
+        "[resourceId('Microsoft.Storage/storageAccounts/blobServices', variables('storageName'), 'default')]"
+      ]
+    },
+    {
+      "type": "Microsoft.Storage/storageAccounts/queueServices",
+      "apiVersion": "2023-05-01",
+      "name": "[format('{0}/{1}', variables('storageName'), 'default')]",
+      "dependsOn": [
+        "[resourceId('Microsoft.Storage/storageAccounts', variables('storageName'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.Storage/storageAccounts/queueServices/queues",
+      "apiVersion": "2023-05-01",
+      "name": "[format('{0}/{1}/{2}', variables('storageName'), 'default', variables('indexerQueueName'))]",
+      "dependsOn": [
+        "[resourceId('Microsoft.Storage/storageAccounts/queueServices', variables('storageName'), 'default')]"
+      ]
+    },
+    {
+      "type": "Microsoft.Storage/storageAccounts/queueServices/queues",
+      "apiVersion": "2023-05-01",
+      "name": "[format('{0}/{1}/{2}', variables('storageName'), 'default', variables('indexerPoisonQueueName'))]",
+      "dependsOn": [
+        "[resourceId('Microsoft.Storage/storageAccounts/queueServices', variables('storageName'), 'default')]"
+      ]
+    },
+    {
+      "type": "Microsoft.Storage/storageAccounts/tableServices",
+      "apiVersion": "2023-05-01",
+      "name": "[format('{0}/{1}', variables('storageName'), 'default')]",
+      "dependsOn": [
+        "[resourceId('Microsoft.Storage/storageAccounts', variables('storageName'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.Storage/storageAccounts/tableServices/tables",
+      "apiVersion": "2023-05-01",
+      "name": "[format('{0}/{1}/{2}', variables('storageName'), 'default', variables('failedFilesTableName'))]",
+      "dependsOn": [
+        "[resourceId('Microsoft.Storage/storageAccounts/tableServices', variables('storageName'), 'default')]"
+      ]
+    },
+    {
+      "type": "Microsoft.Storage/storageAccounts/tableServices/tables",
+      "apiVersion": "2023-05-01",
+      "name": "[format('{0}/{1}/{2}', variables('storageName'), 'default', variables('runStateTableName'))]",
+      "dependsOn": [
+        "[resourceId('Microsoft.Storage/storageAccounts/tableServices', variables('storageName'), 'default')]"
+      ]
+    },
+    {
+      "type": "Microsoft.Storage/storageAccounts/tableServices/tables",
+      "apiVersion": "2023-05-01",
+      "name": "[format('{0}/{1}/{2}', variables('storageName'), 'default', variables('watermarkTableName'))]",
+      "dependsOn": [
+        "[resourceId('Microsoft.Storage/storageAccounts/tableServices', variables('storageName'), 'default')]"
       ]
     },
     {
@@ -180,6 +423,54 @@
       "dependsOn": [
         "[resourceId('Microsoft.OperationalInsights/workspaces', variables('logAnalyticsName'))]"
       ]
+    },
+    {
+      "condition": "[parameters('useClientSecret')]",
+      "type": "Microsoft.KeyVault/vaults",
+      "apiVersion": "2023-07-01",
+      "name": "[variables('keyVaultName')]",
+      "location": "[parameters('location')]",
+      "properties": {
+        "tenantId": "[subscription().tenantId]",
+        "sku": {
+          "family": "A",
+          "name": "standard"
+        },
+        "enableRbacAuthorization": true,
+        "enableSoftDelete": true,
+        "softDeleteRetentionInDays": 7,
+        "publicNetworkAccess": "Enabled"
+      }
+    },
+    {
+      "condition": "[parameters('useClientSecret')]",
+      "type": "Microsoft.KeyVault/vaults/secrets",
+      "apiVersion": "2023-07-01",
+      "name": "[format('{0}/{1}', variables('keyVaultName'), 'graph-client-secret')]",
+      "properties": {
+        "value": "[parameters('clientSecretValue')]"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.KeyVault/vaults', variables('keyVaultName'))]"
+      ]
+    },
+    {
+      "condition": "[parameters('provisionDocIntel')]",
+      "type": "Microsoft.CognitiveServices/accounts",
+      "apiVersion": "2024-10-01",
+      "name": "[variables('docIntelName')]",
+      "location": "[parameters('location')]",
+      "kind": "FormRecognizer",
+      "sku": {
+        "name": "S0"
+      },
+      "properties": {
+        "customSubDomainName": "[variables('docIntelName')]",
+        "publicNetworkAccess": "Enabled"
+      },
+      "identity": {
+        "type": "SystemAssigned"
+      }
     },
     {
       "type": "Microsoft.Web/serverfarms",
@@ -219,7 +510,7 @@
           },
           "scaleAndConcurrency": {
             "maximumInstanceCount": 40,
-            "instanceMemoryMB": 2048
+            "instanceMemoryMB": "[parameters('instanceMemoryMB')]"
           },
           "runtime": {
             "name": "python",
@@ -227,89 +518,13 @@
           }
         },
         "siteConfig": {
-          "appSettings": [
-            {
-              "name": "AzureWebJobsStorage__accountName",
-              "value": "[variables('storageName')]"
-            },
-            {
-              "name": "FUNCTIONS_EXTENSION_VERSION",
-              "value": "~4"
-            },
-            {
-              "name": "APPINSIGHTS_INSTRUMENTATIONKEY",
-              "value": "[reference(resourceId('Microsoft.Insights/components', variables('appInsightsName')), '2020-02-02').InstrumentationKey]"
-            },
-            {
-              "name": "APPLICATIONINSIGHTS_CONNECTION_STRING",
-              "value": "[reference(resourceId('Microsoft.Insights/components', variables('appInsightsName')), '2020-02-02').ConnectionString]"
-            },
-            {
-              "name": "TENANT_ID",
-              "value": "[parameters('tenantId')]"
-            },
-            {
-              "name": "SHAREPOINT_SITE_URL",
-              "value": "[parameters('sharePointSiteUrl')]"
-            },
-            {
-              "name": "SHAREPOINT_LIBRARIES",
-              "value": "[parameters('sharePointLibraries')]"
-            },
-            {
-              "name": "SEARCH_ENDPOINT",
-              "value": "[parameters('searchEndpoint')]"
-            },
-            {
-              "name": "SEARCH_INDEX_NAME",
-              "value": "[parameters('searchIndexName')]"
-            },
-            {
-              "name": "FOUNDRY_ENDPOINT",
-              "value": "[parameters('foundryEndpoint')]"
-            },
-            {
-              "name": "FOUNDRY_EMBEDDING_DEPLOYMENT",
-              "value": "[parameters('foundryEmbeddingDeployment')]"
-            },
-            {
-              "name": "FOUNDRY_EMBEDDING_DIMENSIONS",
-              "value": "[parameters('foundryEmbeddingDimensions')]"
-            },
-            {
-              "name": "INDEXED_EXTENSIONS",
-              "value": "[parameters('indexedExtensions')]"
-            },
-            {
-              "name": "INCREMENTAL_MINUTES",
-              "value": "[parameters('incrementalMinutes')]"
-            },
-            {
-              "name": "INDEXER_SCHEDULE",
-              "value": "[parameters('indexerSchedule')]"
-            },
-            {
-              "name": "MAX_FILE_SIZE_MB",
-              "value": "100"
-            },
-            {
-              "name": "MAX_CONCURRENCY",
-              "value": "4"
-            },
-            {
-              "name": "CHUNK_SIZE",
-              "value": "2000"
-            },
-            {
-              "name": "CHUNK_OVERLAP",
-              "value": "200"
-            }
-          ]
+          "appSettings": "[concat(createArray(createObject('name', 'AzureWebJobsStorage__accountName', 'value', variables('storageName')), createObject('name', 'AzureWebJobsStorage__credential', 'value', 'managedidentity'), createObject('name', 'FUNCTIONS_EXTENSION_VERSION', 'value', '~4'), createObject('name', 'APPLICATIONINSIGHTS_CONNECTION_STRING', 'value', reference(resourceId('Microsoft.Insights/components', variables('appInsightsName')), '2020-02-02').ConnectionString), createObject('name', 'TENANT_ID', 'value', parameters('tenantId')), createObject('name', 'SHAREPOINT_SITE_URL', 'value', parameters('sharePointSiteUrl')), createObject('name', 'SHAREPOINT_LIBRARIES', 'value', parameters('sharePointLibraries')), createObject('name', 'SHAREPOINT_ROOT_PATHS', 'value', parameters('sharePointRootPaths')), createObject('name', 'SEARCH_ENDPOINT', 'value', parameters('searchEndpoint')), createObject('name', 'SEARCH_INDEX_NAME', 'value', parameters('searchIndexName')), createObject('name', 'INDEXED_EXTENSIONS', 'value', parameters('indexedExtensions')), createObject('name', 'INDEXER_SCHEDULE', 'value', parameters('indexerSchedule')), createObject('name', 'PROCESSING_MODE', 'value', parameters('processingMode')), createObject('name', 'START_DATE', 'value', parameters('startDate')), createObject('name', 'FUNCTION_PROCESSING_MODE', 'value', parameters('functionProcessingMode')), createObject('name', 'MAX_FILE_SIZE_MB', 'value', parameters('maxFileSizeMb')), createObject('name', 'MAX_CONCURRENCY', 'value', '4'), createObject('name', 'CHUNK_SIZE', 'value', '2000'), createObject('name', 'CHUNK_OVERLAP', 'value', '200'), createObject('name', 'VECTORISE_CONCURRENCY', 'value', string(parameters('vectoriseConcurrency'))), createObject('name', 'MULTIMODAL_MAX_IN_FLIGHT', 'value', string(parameters('multimodalMaxInFlight'))), createObject('name', 'RECONCILE_EVERY_N_RUNS', 'value', string(parameters('reconcileEveryNRuns'))), createObject('name', 'BACKUP_SCHEDULE', 'value', parameters('backupSchedule')), createObject('name', 'BACKUP_CONTAINER', 'value', variables('backupContainerName')), createObject('name', 'BACKUP_RETENTION_DAYS', 'value', string(parameters('backupRetentionDays'))), createObject('name', 'STATE_CONTAINER', 'value', variables('stateContainerName')), createObject('name', 'INDEXER_QUEUE_NAME', 'value', variables('indexerQueueName')), createObject('name', 'FAILED_FILES_TABLE', 'value', variables('failedFilesTableName')), createObject('name', 'RUN_STATE_TABLE', 'value', variables('runStateTableName')), createObject('name', 'WATERMARK_TABLE', 'value', variables('watermarkTableName')), createObject('name', 'MULTIMODAL_ENDPOINT', 'value', parameters('foundryEndpoint')), createObject('name', 'MULTIMODAL_MODEL_VERSION', 'value', parameters('multimodalModelVersion')), createObject('name', 'IMAGES_CONTAINER', 'value', variables('effectiveImagesContainer')), createObject('name', 'EXTRACT_IMAGES', 'value', if(parameters('extractImages'), 'true', 'false')), createObject('name', 'DOCINTEL_ENDPOINT', 'value', variables('effectiveDocIntelEndpoint')), createObject('name', 'FORCE_RECREATE_INDEX', 'value', if(parameters('forceRecreateIndex'), 'true', 'false')), createObject('name', 'API_AUDIENCE', 'value', parameters('apiAudience')), createObject('name', 'ALWAYS_ALLOWED_IDS', 'value', parameters('alwaysAllowedIds'))), if(parameters('useClientSecret'), createArray(createObject('name', 'CLIENT_SECRET', 'value', format('@Microsoft.KeyVault(SecretUri={0}secrets/graph-client-secret/)', if(parameters('useClientSecret'), reference(resourceId('Microsoft.KeyVault/vaults', variables('keyVaultName')), '2023-07-01').vaultUri, '')))), createArray()))]"
         }
       },
       "dependsOn": [
         "[resourceId('Microsoft.Insights/components', variables('appInsightsName'))]",
         "[resourceId('Microsoft.Web/serverfarms', format('{0}-plan', parameters('baseName')))]",
+        "[resourceId('Microsoft.KeyVault/vaults', variables('keyVaultName'))]",
         "[resourceId('Microsoft.Storage/storageAccounts', variables('storageName'))]"
       ]
     },
@@ -344,10 +559,41 @@
     {
       "type": "Microsoft.Authorization/roleAssignments",
       "apiVersion": "2022-04-01",
-      "scope": "[resourceId('Microsoft.CognitiveServices/accounts', variables('cognitiveAccountName'))]",
-      "name": "[guid(resourceId('Microsoft.CognitiveServices/accounts', variables('cognitiveAccountName')), variables('cognitiveServicesOpenAIUserRoleId'), resourceId('Microsoft.Web/sites', variables('functionAppName')))]",
+      "scope": "[resourceId('Microsoft.CognitiveServices/accounts', variables('foundryAccountName'))]",
+      "name": "[guid(resourceId('Microsoft.CognitiveServices/accounts', variables('foundryAccountName')), variables('cognitiveServicesUserRoleId'), resourceId('Microsoft.Web/sites', variables('functionAppName')))]",
       "properties": {
-        "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', variables('cognitiveServicesOpenAIUserRoleId'))]",
+        "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', variables('cognitiveServicesUserRoleId'))]",
+        "principalId": "[reference(resourceId('Microsoft.Web/sites', variables('functionAppName')), '2024-04-01', 'full').identity.principalId]",
+        "principalType": "ServicePrincipal"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Web/sites', variables('functionAppName'))]"
+      ]
+    },
+    {
+      "condition": "[parameters('provisionDocIntel')]",
+      "type": "Microsoft.Authorization/roleAssignments",
+      "apiVersion": "2022-04-01",
+      "scope": "[resourceId('Microsoft.CognitiveServices/accounts', variables('docIntelName'))]",
+      "name": "[guid(resourceId('Microsoft.CognitiveServices/accounts', variables('docIntelName')), variables('cognitiveServicesUserRoleId'), resourceId('Microsoft.Web/sites', variables('functionAppName')))]",
+      "properties": {
+        "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', variables('cognitiveServicesUserRoleId'))]",
+        "principalId": "[reference(resourceId('Microsoft.Web/sites', variables('functionAppName')), '2024-04-01', 'full').identity.principalId]",
+        "principalType": "ServicePrincipal"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.CognitiveServices/accounts', variables('docIntelName'))]",
+        "[resourceId('Microsoft.Web/sites', variables('functionAppName'))]"
+      ]
+    },
+    {
+      "condition": "[and(and(not(parameters('provisionDocIntel')), not(empty(parameters('docIntelResourceId')))), contains(parameters('docIntelResourceId'), resourceGroup().name))]",
+      "type": "Microsoft.Authorization/roleAssignments",
+      "apiVersion": "2022-04-01",
+      "scope": "[resourceId('Microsoft.CognitiveServices/accounts', variables('effectiveDocIntelName'))]",
+      "name": "[guid(parameters('docIntelResourceId'), variables('cognitiveServicesUserRoleId'), resourceId('Microsoft.Web/sites', variables('functionAppName')))]",
+      "properties": {
+        "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', variables('cognitiveServicesUserRoleId'))]",
         "principalId": "[reference(resourceId('Microsoft.Web/sites', variables('functionAppName')), '2024-04-01', 'full').identity.principalId]",
         "principalType": "ServicePrincipal"
       },
@@ -399,6 +645,37 @@
         "[resourceId('Microsoft.Web/sites', variables('functionAppName'))]",
         "[resourceId('Microsoft.Storage/storageAccounts', variables('storageName'))]"
       ]
+    },
+    {
+      "type": "Microsoft.Authorization/roleAssignments",
+      "apiVersion": "2022-04-01",
+      "scope": "[resourceId('Microsoft.Storage/storageAccounts', variables('storageName'))]",
+      "name": "[guid(resourceId('Microsoft.Storage/storageAccounts', variables('storageName')), variables('storageTableDataContributorRoleId'), resourceId('Microsoft.Web/sites', variables('functionAppName')))]",
+      "properties": {
+        "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', variables('storageTableDataContributorRoleId'))]",
+        "principalId": "[reference(resourceId('Microsoft.Web/sites', variables('functionAppName')), '2024-04-01', 'full').identity.principalId]",
+        "principalType": "ServicePrincipal"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Web/sites', variables('functionAppName'))]",
+        "[resourceId('Microsoft.Storage/storageAccounts', variables('storageName'))]"
+      ]
+    },
+    {
+      "condition": "[parameters('useClientSecret')]",
+      "type": "Microsoft.Authorization/roleAssignments",
+      "apiVersion": "2022-04-01",
+      "scope": "[resourceId('Microsoft.KeyVault/vaults', variables('keyVaultName'))]",
+      "name": "[guid(resourceId('Microsoft.KeyVault/vaults', variables('keyVaultName')), variables('keyVaultSecretsUserRoleId'), resourceId('Microsoft.Web/sites', variables('functionAppName')))]",
+      "properties": {
+        "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', variables('keyVaultSecretsUserRoleId'))]",
+        "principalId": "[reference(resourceId('Microsoft.Web/sites', variables('functionAppName')), '2024-04-01', 'full').identity.principalId]",
+        "principalType": "ServicePrincipal"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Web/sites', variables('functionAppName'))]",
+        "[resourceId('Microsoft.KeyVault/vaults', variables('keyVaultName'))]"
+      ]
     }
   ],
   "outputs": {
@@ -409,6 +686,22 @@
     "functionAppPrincipalId": {
       "type": "string",
       "value": "[reference(resourceId('Microsoft.Web/sites', variables('functionAppName')), '2024-04-01', 'full').identity.principalId]"
+    },
+    "storageAccountName": {
+      "type": "string",
+      "value": "[variables('storageName')]"
+    },
+    "keyVaultName": {
+      "type": "string",
+      "value": "[if(parameters('useClientSecret'), variables('keyVaultName'), '')]"
+    },
+    "docIntelEndpoint": {
+      "type": "string",
+      "value": "[variables('effectiveDocIntelEndpoint')]"
+    },
+    "multimodalEndpoint": {
+      "type": "string",
+      "value": "[parameters('foundryEndpoint')]"
     }
   }
 }

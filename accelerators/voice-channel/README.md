@@ -61,6 +61,23 @@ Two PowerShell scripts still need to run from your workstation after the button 
 
 ---
 
+## Embed the web UI in Teams and Microsoft 365
+
+The accelerator ships **two complementary Teams surfaces** that you can install independently:
+
+| Teams surface | What the user sees | How it's installed |
+|---|---|---|
+| **Embedded tab** (real-time voice) | The Voice Live web UI rendered inside Teams — full-duplex streaming, barge-in, HD voice | Build [`teams-app/dist/teams-app.zip`](teams-app/) with `teams-app/package.ps1`, upload via **Teams → Apps → Upload a custom app** |
+| **Chat bot** (text / push-to-talk) | Chat with `@IT Assistant` in Teams | Run [`foundry-agent/publish-to-teams.ps1`](foundry-agent/publish-to-teams.ps1), upload that package |
+
+The embedded tab is a **Teams personal app** with `staticTabs` pointing at your Container App URL. One Compress-Archive call packs `manifest.json + color.png + outline.png` into the zip users install. When the tenant admin uploads the same zip through the Teams Admin Center, it also surfaces in **Microsoft 365** under **Apps** in [M365 Chat](https://m365.cloud.microsoft/chat) and the Outlook side-pane.
+
+The server already sets the `Content-Security-Policy: frame-ancestors …teams.microsoft.com …microsoft365.com …cloud.microsoft` header (see [`server/app/main.py`](server/app/main.py)) so the iframe renders, and the browser client detects the Teams host via `@microsoft/teams-js` to suppress the header/footer and honour the Teams dark / high-contrast theme.
+
+See [`teams-app/README.md`](teams-app/README.md) for the full build + install walkthrough, including the tenant-wide rollout via the Teams Admin Center.
+
+---
+
 ## Repository layout
 
 ```

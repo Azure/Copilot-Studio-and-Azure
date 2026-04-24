@@ -3,21 +3,39 @@ using './main.bicep'
 param baseName = 'sp-indexer'
 param location = 'swedencentral'
 
-// --- Fill in your values ---
-param tenantId = '60cb3c79-32ec-4912-b674-c1b68653aa56'
-param sharePointSiteUrl = 'https://mngenvmcap278933.sharepoint.com/sites/ExamsHub/'
+param tenantId = '00000000-0000-0000-0000-000000000000'
+param sharePointSiteUrl = 'https://yourcompany.sharepoint.com/sites/YourSite'
 
-// Azure AI Search
-param searchEndpoint = 'https://sharepoint-search007.search.windows.net'
-param searchResourceId = '/subscriptions/fbfbfbe5-9ee2-43ed-b514-f3266c2193ab/resourceGroups/sharepoint-testing/providers/Microsoft.Search/searchServices/sharepoint-search007'
+param searchEndpoint = 'https://your-search.search.windows.net'
+param searchResourceId = '/subscriptions/<sub-id>/resourceGroups/<rg>/providers/Microsoft.Search/searchServices/your-search'
 param searchIndexName = 'sharepoint-index'
 
-// Azure OpenAI / Foundry
-param foundryEndpoint = 'https://openai-test-sweden-007.services.ai.azure.com'
-param foundryResourceId = '/subscriptions/fbfbfbe5-9ee2-43ed-b514-f3266c2193ab/resourceGroups/sharepoint-testing/providers/Microsoft.CognitiveServices/accounts/openai-test-sweden-007'
-param foundryEmbeddingDeployment = 'text-embedding-3-large'
-param foundryEmbeddingDimensions = '1536'
+param foundryEndpoint = 'https://your-foundry.cognitiveservices.azure.com'
+param foundryResourceId = '/subscriptions/<sub-id>/resourceGroups/<rg>/providers/Microsoft.CognitiveServices/accounts/your-foundry'
+param multimodalModelVersion = '2023-04-15'
 
-// Schedule: every hour, incremental (last 65 min to avoid gaps)
+param processingMode = 'since-last-run'
+param startDate = ''
 param indexerSchedule = '0 0 * * * *'
-param incrementalMinutes = '65'
+
+param provisionDocIntel = false
+param docIntelEndpoint = ''
+param docIntelResourceId = ''
+
+param useClientSecret = false
+param clientSecretValue = ''
+
+param apiAudience = ''
+param alwaysAllowedIds = ''
+
+param imagesContainerName = 'images'
+param extractImages = true
+param forceRecreateIndex = false
+
+param sharePointRootPaths = ''
+param vectoriseConcurrency = 8
+param multimodalMaxInFlight = 8
+param reconcileEveryNRuns = 24
+
+param backupSchedule = '0 0 3 * * *'
+param backupRetentionDays = 7

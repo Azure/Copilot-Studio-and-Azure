@@ -1,232 +1,216 @@
 # SharePoint Connector — Video Walkthrough Script
 
-> **Estimated duration:** 15–20 minutes  
-> **Audience:** Azure developers, architects, Copilot Studio practitioners  
+> **Estimated duration:** 18–22 minutes
+> **Audience:** Azure developers, architects, Copilot Studio practitioners
 > **Format:** Screen recording with narration
 
 ---
 
-## PART 1: Design Walkthrough (5–7 minutes)
+## PART 1 — Design Walkthrough (6–8 minutes)
 
-### Opening (30 seconds)
+### Opening (30 s)
 
-> Hi everyone. In this video, I'm going to walk you through the SharePoint to Azure AI Search connector accelerator. This is a fully custom push connector that indexes SharePoint Online documents into Azure AI Search — extracting text, generating vector embeddings, and preserving security permissions — all running as a serverless Azure Function.
+> Hi everyone. In this video, I'll walk you through the SharePoint → Azure AI Search connector accelerator. It's a push connector that keeps an Azure AI Search index in sync with one SharePoint site — or even a specific folder inside it — and wires that index into a Copilot Studio agent with **true per-user security trimming**, so the agent only ever cites documents the signed-in user actually has access to.
 >
-> By the end of this video, you'll understand the architecture, know how to deploy it to your own environment, and see it working end to end.
+> Along the way it handles multimodal content (text and images in the same retrieval), deletions at source, large files, rate limits, and nightly backups. By the end you'll understand the architecture, know how to deploy it, and see it working end-to-end.
 
-### The Problem (1 minute)
+### Why this exists (1 min)
 
-> Let's start with **why** this exists.
+> Azure AI Search has a preview SharePoint connector, but it has real limitations: no private endpoint support, no Conditional Access compatibility, no SLA, limited control over extraction, and no per-user trimming.
 >
-> Azure AI Search has a built-in SharePoint connector, but it's still in preview. It doesn't support private endpoints, it doesn't work with Conditional Access policies, there's no SLA, and you have limited control over how documents are processed.
->
-> If you're building a Copilot Studio agent that needs to search your organization's SharePoint documents, you need something more reliable. That's what this accelerator gives you — a production-ready connector you fully control.
+> If you're building a Copilot Studio agent that needs to ground on SharePoint content *safely*, you want a pipeline you control. That's what this accelerator gives you — and importantly, it plugs into Copilot Studio using the **built-in generative-orchestration lifecycle triggers**, not a bespoke connector.
 
-### Architecture Overview (2–3 minutes)
+### Architecture overview (2–3 min)
 
-*[Show the architecture diagram]*
+*[Show the architecture diagram — images/sharepoint-connector-architecture.png]*
 
-> Let me walk you through the solution architecture. There are two flows here: the **ingestion pipeline** at the top, and the **retrieval flow** at the bottom.
+> Let me walk you through it. Two flows: the **ingestion pipeline** at the top, and the **retrieval flow** at the bottom.
 >
-> **Starting from the left** — we have SharePoint Online with your document libraries. The connector supports over 25 file formats: Word, PDF, Excel, PowerPoint, plain text, HTML, email files, and more.
+> **On the left** is SharePoint Online. We point the connector at one site, one library, or even one folder inside a library — via `SHAREPOINT_SITE_URL` plus `SHAREPOINT_LIBRARIES` and `SHAREPOINT_ROOT_PATHS`. Least-privilege access is enforced using Graph's `Sites.Selected` permission — we grant the Function App's managed identity read on this one site, and nothing else in the tenant.
 >
-> **In the center** is the Azure Function App. This is the heart of the solution. It runs on Flex Consumption, which means it scales to zero when idle — you only pay when it's actually processing documents. It uses a timer trigger, configured to run every hour by default.
+> **The ingestion pipeline is queue-fed.** Every hour a timer-triggered **dispatcher** asks Graph's `/delta` endpoint what's changed — including deletions — since the last run. For each new or modified file it enqueues one message on `sp-indexer-q`. For each *deleted* file it removes the corresponding chunks from the search index immediately. The per-drive delta token gets persisted so the next run picks up where this one left off.
 >
-> When the timer fires, here's what happens inside the function:
+> **Queue-triggered workers** scale out independently — up to 40 instances. Each worker takes one message, streams the file to a tempfile (so we stay memory-bounded on 500-MB PDFs), routes it through extraction, chunks the content, and embeds every chunk.
 >
-> 1. **File discovery** — it calls the Microsoft Graph API to list files across your SharePoint document libraries. In incremental mode, it only looks at files modified in the last 65 minutes.
-> 2. **Download** — for each file that needs processing, it downloads the content via Graph API.
-> 3. **Text extraction** — a built-in document processor handles 25+ formats, extracting clean text from each file.
-> 4. **Chunking** — the text is split into overlapping chunks with intelligent boundary detection at paragraph and sentence breaks.
-> 5. **Embedding generation** — chunks are sent to Azure OpenAI to generate vector embeddings using text-embedding-3-large at 1536 dimensions.
-> 6. **Push to index** — finally, the chunks, their vectors, metadata, and SharePoint permission IDs are pushed directly into Azure AI Search.
+> **Extraction has two routes.** If Azure AI Document Intelligence is configured, PDFs and Office files go through its `prebuilt-layout` model — that gives us reading-order paragraphs, tables, and **figures with cropped image bytes and bounding polygons**. Standalone image files and plain-text formats use simpler paths.
 >
-> On the **right side**, you see the supporting services. Azure Storage handles the Function App runtime. Application Insights gives you logging and monitoring. And the RBAC panel shows the role assignments — the function's managed identity gets specific roles on each service. No API keys anywhere.
+> **Embedding is the unified multimodal part.** Every chunk — text or image — goes through Azure AI Vision multimodal embeddings, the Florence model. It produces 1024-dimensional vectors that live in **the same vector space** for both modalities. That means a text query like "our Q3 revenue chart" can match the slide containing the chart, not just text that mentions Q3.
 >
-> On the **bottom**, the retrieval flow shows how Copilot Studio connects to the AI Search index as a knowledge base. End users ask questions in natural language, and Copilot Studio performs hybrid search — combining vector similarity with keyword matching — and returns grounded answers from your SharePoint documents.
+> **The index itself** has one vector field: `content_embedding`. Each chunk carries `content_text`, `has_image`, `location_metadata` (page number + bounding polygon), and `permission_ids` — the Entra object IDs that have SharePoint access to the source file. We also store image crops in a dedicated blob container so Copilot Studio can render them as citation thumbnails.
+>
+> **At the bottom, the retrieval flow.** A Copilot Studio agent running in generative-orchestration mode hosts an `OnKnowledgeRequested` topic. When the agent decides to query knowledge, this topic fires an HTTP action against our `/api/search` endpoint, flowing the signed-in user's delegated Entra token. Our endpoint validates the token, resolves the user's transitive group memberships via Graph using the Function's managed identity, applies a `permission_ids` OData filter, runs the hybrid + semantic query, and returns ranked citations. The LLM only ever sees chunks the caller is authorised for — there is no post-filter leak.
 
-### Key Design Decisions (1–2 minutes)
+### Key design decisions (1–2 min)
 
-> Let me highlight a few important design decisions:
+> Four things worth calling out.
 >
-> **First, this is a push connector, not a pull connector.** We don't rely on Azure's built-in indexer infrastructure. The function downloads files, processes them in memory, and pushes results directly to the index. This gives you complete control over the pipeline.
+> **First — unified multimodal embeddings.** One vector field, one hybrid query, cross-modal retrieval works natively. No dual-vector complexity.
 >
-> **Second, there's no blob storage intermediary.** Files go straight from SharePoint into memory, get processed, and go into the search index. No intermediate storage to manage or pay for.
+> **Second — queue-based scale-out.** The dispatcher does the discovery, workers do the heavy lifting in parallel. Poison-queue handling is automatic, per-file failure counters live in a table so we don't retry the same doomed file forever.
 >
-> **Third, zero secrets.** All Azure service authentication uses managed identity with RBAC role assignments. The only thing that requires special handling is the Microsoft Graph API permissions, which need a one-time admin consent step.
+> **Third — zero secrets.** Every Azure service call is managed identity. If you need a client-secret fallback for Graph, the Bicep optionally provisions a Key Vault and the app setting becomes a `@Microsoft.KeyVault(SecretUri=…)` reference — never a plain-text secret.
 >
-> **Fourth, incremental sync.** In production, the connector doesn't reprocess everything every hour. It uses the Graph API's `lastModifiedDateTime` filter to only pick up changed files. There's also a freshness check against the index — if a file's modification timestamp matches what's already indexed, it's skipped entirely.
->
-> **And finally, security trimming.** The connector stores SharePoint permission IDs with each chunk. This means you can filter search results at query time based on the current user's identity and group memberships — so users only see documents they actually have access to.
+> **Fourth — pre-retrieval security trimming, not post-filtering.** We deliberately chose Copilot Studio's `OnKnowledgeRequested` lifecycle trigger instead of `AI Response Generated`. Post-filtering citations leaves a data leak — the LLM has already seen restricted content and could paraphrase it. Pre-retrieval trimming means the LLM never sees what the user isn't authorised for.
 
 ---
 
-## PART 2: Deployment (5–7 minutes)
+## PART 2 — Deployment (6–8 min)
 
-### Prerequisites (30 seconds)
+### Prerequisites (30 s)
 
-> Now let's deploy this. You'll need a few things ready:
+> You'll need:
 >
-> - An Azure subscription
-> - Azure CLI installed
-> - Azure Functions Core Tools v4
-> - Python 3.11 or later
-> - An Azure AI Search service — Basic tier or higher, because the free tier doesn't support vector search
-> - An Azure OpenAI or Foundry resource with a text-embedding-3-large deployment
-> - A SharePoint Online site with some documents
+> - An Azure subscription — Owner or User Access Administrator on the target RG (needed to assign RBAC).
+> - Python 3.11+, the Azure CLI (`az`), and Azure Functions Core Tools v4.
+> - `uv` for Python dependency management.
+> - An Azure AI Search service — Basic tier or higher (free tier doesn't support vector search).
+> - A Microsoft Foundry / Azure AI Services multi-service resource — hosts the Vision multimodal embedder, and optionally Document Intelligence.
+> - A SharePoint Online site with some documents.
 
-### Option A: One-Click Deploy (1 minute)
+### Option A — Deploy to Azure button (1–2 min)
 
-*[Show the README, scroll to the Deploy to Azure button]*
+*[Show the README, scroll to "Automated Deployment"]*
 
-> The fastest way to get the infrastructure up is the **Deploy to Azure** button in the README.
+> The fastest path is the **Deploy to Azure** button in the README. Fill in:
 >
-> Click it, and you'll be taken to the Azure Portal's custom deployment page. Fill in the parameters:
+> - `baseName` — short prefix like `sp-indexer`.
+> - `tenantId`, `sharePointSiteUrl`.
+> - `searchEndpoint` + `searchResourceId` for your AI Search service.
+> - `foundryEndpoint` + `foundryResourceId` for the Foundry resource.
+> - Optional: `sharePointRootPaths` to scope to specific folders.
 >
-> - **baseName** — a short name like `sp-indexer`, used as a prefix for all resources
-> - **tenantId** — your Entra ID tenant ID
-> - **sharePointSiteUrl** — the full URL to your SharePoint site
-> - **searchEndpoint** and **searchResourceId** — your AI Search service endpoint and its full resource ID
-> - **foundryEndpoint** and **foundryResourceId** — same for Azure OpenAI
->
-> Click **Review + create**, and the deployment will take about 2–3 minutes. It creates the Function App on Flex Consumption, a Storage Account, Application Insights with Log Analytics, and assigns all the RBAC roles automatically.
->
-> Note that this only deploys the **infrastructure**. We still need to deploy the function code separately.
+> Review + create, deployment takes about 3 minutes. It creates the Function App on Flex Consumption, Storage with queue / table / state / images / backup containers, App Insights, optional Key Vault (if you're using the client-secret path), and every RBAC role.
 
-### Option B: Script Deploy (1 minute)
+### Option B — Scripted deploy (1 min)
 
-> Alternatively, you can use the PowerShell deployment script, which handles both infrastructure and code in one command.
+> Or clone the repo, edit `infra/main.bicepparam` with your values, and run:
 >
-> Clone the repo, navigate to the `sharepoint-connector` directory, edit `infra/main.bicepparam` with your values, and then run:
->
-> ```
+> ```powershell
 > .\infra\deploy.ps1 -ResourceGroup my-rg
 > ```
 >
-> This runs the Bicep deployment, generates the requirements.txt, and publishes the function code.
+> Pass `-ProvisionDocIntel` to create a new Document Intelligence account; pass `-ClientSecret (Read-Host -AsSecureString)` if you want the Graph client-secret fallback via Key Vault.
 
-### Deploy Function Code (1 minute)
+### Deploy the function code (1 min)
 
 *[Show terminal]*
 
-> If you used the one-click button, you need to deploy the code now. From the `sharepoint-connector` directory:
+> Regardless of how you did the infra, push the code:
 >
-> ```
+> ```powershell
 > uv sync
-> uv export --no-hashes --extra func --no-dev > requirements.txt
-> func azure functionapp publish sp-indexer-func --python
+> func azure functionapp publish <function-app-name> --python
 > ```
->
-> This packages up the Python code and pushes it to your Function App. Should take about a minute.
 
-### Grant Graph API Permissions (2 minutes)
+### Grant Sites.Selected — least privilege (2 min)
 
 *[Show terminal]*
 
-> This is the one manual step that can't be automated — granting the function's managed identity permission to read SharePoint via Microsoft Graph.
+> This is the one manual step that can't be automated. We need to grant the Function's managed identity read on *just* our target site. The accelerator ships a helper:
 >
-> The deployment output gives you the managed identity's object ID. We need to grant it two application permissions: `Sites.Read.All` and `Files.Read.All`.
->
-> I'll use the Azure CLI approach. First, get the Graph API service principal ID, then get the role IDs for each permission, and finally create the app role assignments.
->
-> ```
-> GRAPH_SP_ID=$(az ad sp list --filter "appId eq '00000003-0000-0000-c000-000000000000'" --query "[0].id" -o tsv)
+> ```powershell
+> .\infra\grant-site-permission.ps1 `
+>     -SiteUrl "https://contoso.sharepoint.com/sites/YourSite" `
+>     -FunctionAppName "<function-app-name>"
 > ```
 >
-> Then for each permission:
+> That's it — no tenant-wide `Sites.Read.All`, no `Files.Read.All`. The MI can read this one site and nothing else.
 >
-> ```
-> az rest --method POST --uri "https://graph.microsoft.com/v1.0/servicePrincipals/$MSI_OBJECT_ID/appRoleAssignments" --body "{...}"
-> ```
+> We also need one Graph app permission for the `/api/search` endpoint to resolve user group memberships: `GroupMember.Read.All` (Application). Grant admin consent to that on the MI.
 >
-> This requires Global Admin or Privileged Role Administrator. In most organizations, you'll need to coordinate with your identity team for this step.
->
-> After granting permissions, wait 2–10 minutes for RBAC propagation before testing.
+> Wait 2–10 minutes for RBAC propagation before you test.
 
 ---
 
-## PART 3: Testing the Connector (3–5 minutes)
+## PART 3 — Testing (4–5 min)
 
-### Trigger a Full Reindex (1–2 minutes)
+### Upload sample data (optional, 30 s)
+
+> If you don't already have SharePoint content to test with, the README's Testing section points at Microsoft's public [azure-search-sample-data](https://github.com/Azure-Samples/azure-search-sample-data) repo. The `health-plan/`, `hotel-reviews-images/`, and `nasa-e-book/` folders exercise different parts of the pipeline in a few minutes.
+
+### Trigger a one-off run (1–2 min)
 
 *[Show terminal]*
 
-> Let's test the connector. First, we'll set it to full reindex mode so it processes all files:
+> Let's trigger the dispatcher manually instead of waiting for the timer:
 >
-> ```
-> az functionapp config appsettings set --name sp-indexer-func --resource-group my-rg --settings INCREMENTAL_MINUTES=0
-> ```
->
-> Now trigger the function manually:
->
-> ```
-> $masterKey = (az functionapp keys list --name sp-indexer-func --resource-group my-rg --query "masterKey" -o tsv)
-> Invoke-WebRequest -Uri "https://sp-indexer-func.azurewebsites.net/admin/functions/sharepoint_indexer" -Method POST -Headers @{"x-functions-key"=$masterKey; "Content-Type"="application/json"} -Body '{}'
+> ```powershell
+> $masterKey = (az functionapp keys list --name <fn> --resource-group <rg> --query "masterKey" -o tsv)
+> Invoke-WebRequest -Uri "https://<fn>.azurewebsites.net/admin/functions/sp_indexer_timer" `
+>     -Method POST -Headers @{"x-functions-key"=$masterKey; "Content-Type"="application/json"} -Body '{}'
 > ```
 >
-> While it's running, let's stream the logs:
+> And stream logs:
 >
+> ```bash
+> func azure functionapp logstream <fn>
 > ```
-> func azure functionapp logstream sp-indexer-func
-> ```
 >
-> *[Show logs streaming — point out the key messages]*
+> *[Show logs]*
 >
-> You can see the function discovering files, downloading each one, extracting text, generating embeddings, and pushing chunks to the index. At the end, it logs a summary: how many files were discovered, processed, skipped, and any errors.
+> You'll see the dispatcher call Graph `/delta`, log how many items came back modified vs deleted, enqueue one message per modified file, and advance the delta token. Queue workers pick up messages in parallel — each one logs the download, the DocIntel call, the vectorization (8 chunks at a time by default), and the push to Search.
 
-### Verify the Search Index (1 minute)
+### Confirm documents landed (1 min)
 
-*[Show terminal or Azure Portal]*
+```powershell
+$token = (az account get-access-token --resource "https://search.azure.com" | ConvertFrom-Json).accessToken
+Invoke-RestMethod -Uri "https://<search>.search.windows.net/indexes/sharepoint-index/docs?api-version=2024-07-01&search=*&`$count=true&`$top=0" -Headers @{"Authorization"="Bearer $token"}
+```
 
-> Let's verify the data landed in the search index. We can query the document count:
->
-> ```
-> $token = (az account get-access-token --resource "https://search.azure.com" | ConvertFrom-Json).accessToken
-> Invoke-RestMethod -Uri "https://my-search.search.windows.net/indexes/sharepoint-index/docs?api-version=2024-07-01&search=*&`$count=true&`$top=0" -Headers @{"Authorization"="Bearer $token"}
-> ```
->
-> We can see there are now documents in the index. Let's also do a semantic search to make sure the vectors are working:
->
-> *[Run a search query with a natural language question relevant to the SharePoint content]*
->
-> Great — we're getting relevant results back, with the correct metadata, chunk text, and permission IDs.
+> Expect `@odata.count > 0`.
 
-### Connect to Copilot Studio (1–2 minutes)
+### Wire up Copilot Studio (1–2 min)
 
 *[Show Copilot Studio]*
 
-> The final step is connecting this index to Copilot Studio as a knowledge base.
+> Now the Copilot Studio side. In your generative-orchestration agent, import the topic YAML that ships with the accelerator: `copilot-studio-topics/OnKnowledgeRequested.yaml`. The topic has to be named **exactly** `OnKnowledgeRequested` — that's how Copilot Studio resolves the lifecycle trigger.
 >
-> In Copilot Studio, go to your agent's **Knowledge** section, click **Add knowledge**, select **Azure AI Search**, and enter your search endpoint and index name.
+> Two placeholders to fill in: your Function App hostname, and the name of the OAuth2 connection reference you set up against the API app registration. Publish the agent.
 >
-> Now let's test it. I'll ask the agent a question about one of the documents in SharePoint...
+> Now let's test it. I'll ask the agent a question about one of the SharePoint documents...
 >
-> *[Ask a question, show the response with citations]*
+> *[Ask a question as User A — shows citation]*
 >
-> And there it is — the agent found the relevant document chunks from the search index and generated a grounded response with citations pointing back to the source SharePoint documents.
+> Perfect — grounded response with citations pointing back to the SharePoint file URL. Note the citation link is the SharePoint URL, not an Azure AI Search URL — click it and SharePoint opens the file with its own permission check. Defence in depth.
 
-### Restore Incremental Mode (15 seconds)
+### Verify per-user trimming (30 s)
 
-> Before we wrap up, let's switch back to incremental mode for production:
+> Now I sign in as **User B**, who doesn't have SharePoint access to that file, and ask the same question.
 >
-> ```
-> az functionapp config appsettings set --name sp-indexer-func --resource-group my-rg --settings INCREMENTAL_MINUTES=65
+> *[Ask same question as User B]*
+>
+> No citation for that file. Even though the file is in the index, our `/api/search` endpoint saw that User B's Entra object ID wasn't in the chunk's `permission_ids` and filtered it out before the LLM ever saw it.
+
+### Verify deletion propagation (30 s)
+
+> I'll delete a file in SharePoint, trigger the dispatcher again, and re-run the query. The citation is gone — Graph `/delta` reported the deletion, and the dispatcher removed the chunks.
+
+### Trigger a backup on demand (15 s)
+
+> The nightly backup function can also run on demand:
+>
+> ```powershell
+> $fk = (az functionapp keys list --name <fn> --resource-group <rg> --query "functionKeys.default" -o tsv)
+> Invoke-WebRequest -Uri "https://<fn>.azurewebsites.net/api/backup?code=$fk" -Method POST
 > ```
 >
-> Now the connector will run every hour and only process files that changed in the last 65 minutes.
+> Check the `backup` blob container — a `YYYY-MM-DD/` folder with `index-schema.json`, `documents.jsonl`, `watermarks.jsonl`, and `failed-files.jsonl`. Seven days of retention by default.
 
 ---
 
-## Closing (30 seconds)
+## Closing (30 s)
 
-> That's the SharePoint to Azure AI Search connector. To recap:
+> That's the SharePoint connector. Recap:
 >
-> - It's a fully custom **push connector** running as a serverless Azure Function
-> - It supports **25+ file formats** with text extraction, chunking, and vector embeddings
-> - It uses **managed identity** everywhere — no API keys or secrets
-> - It does **incremental sync** so it's efficient in production
-> - And it preserves **security permissions** for query-time trimming
+> - **Queue-fed push connector** on Flex Consumption — scales past 50+ files per run.
+> - **Unified multimodal retrieval** via Azure AI Vision multimodal embeddings — one vector field, cross-modal works natively.
+> - **Document Intelligence Layout** (optional) for reading-order paragraphs, tables, and figures from PDF / Office files.
+> - **Per-user security trimming** via Copilot Studio's `OnKnowledgeRequested` topic and `/api/search` — LLM never sees restricted content.
+> - **Least-privilege Graph access** via `Sites.Selected` + a site-scoped PowerShell grant.
+> - **Delta-query deletion propagation** — mirrors SharePoint deletions into the index in near real time.
+> - **Nightly backup** with configurable retention.
+> - **Rate-limit safe** — bounded concurrency + shared 429 cool-off across workers.
 >
-> The full source code, Bicep templates, and one-click deployment are all in the GitHub repo. Check the README for the complete documentation.
+> Source code, Bicep templates, the Copilot Studio topic YAML, and one-click deployment are all in the GitHub repo. The README has a **Customization Guide** covering new file formats, swapping the embedding model, tuning concurrency, and schema changes — plus concrete playbooks for the high / medium items still open in the Well-Architected assessment.
 >
 > Thanks for watching, and happy building.

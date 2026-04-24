@@ -14,6 +14,43 @@
     --shadow: 0 1px 4px rgba(0,0,0,0.04), 0 2px 12px rgba(0,0,0,0.06);
 }
 
+/* ─── Microsoft Teams host overrides ───────────────────────────────────
+   Applied via client.js when microsoftTeams.app.initialize() succeeds.
+   Dark + high-contrast variants mirror Teams' theme tokens so the tab
+   doesn't look out of place inside the Teams chrome.
+-------------------------------------------------------------------- */
+body.in-teams {
+    padding: 1rem 1rem 0.5rem;     /* Teams already has chrome padding */
+    max-width: none;
+}
+body.in-teams header,
+body.in-teams footer {
+    display: none;                  /* Teams gives us its own header / footer */
+}
+body.in-teams main {
+    margin-top: 0;
+    min-height: calc(100vh - 2rem);
+}
+
+body[data-teams-theme="dark"] {
+    --bg:     #1f1f1f;
+    --panel:  #2b2b2b;
+    --fg:     #ffffff;
+    --muted:  #c8c6c4;
+    --border: #3b3a39;
+    --shadow: 0 1px 4px rgba(0,0,0,0.25), 0 2px 12px rgba(0,0,0,0.35);
+}
+body[data-teams-theme="contrast"] {
+    --bg:     #000000;
+    --panel:  #000000;
+    --fg:     #ffffff;
+    --muted:  #ffff01;
+    --border: #ffffff;
+    --accent: #ffff01;
+    --accent-strong: #ffff01;
+    --danger: #ffff01;
+}
+
 * { box-sizing: border-box; }
 
 html, body {

@@ -1,0 +1,46 @@
+{
+    "$schema": "https://developer.microsoft.com/json-schemas/teams/v1.19/MicrosoftTeams.schema.json",
+    "manifestVersion": "1.19",
+    "version": "1.0.0",
+    "id": "<APP_ID>",
+    "packageName": "com.microsoft.samples.voice-channel.it-assistant-voice",
+    "developer": {
+        "name": "Your Company",
+        "websiteUrl": "https://<FQDN>",
+        "privacyUrl": "https://<FQDN>/privacy",
+        "termsOfUseUrl": "https://<FQDN>/terms"
+    },
+    "icons": {
+        "color": "color.png",
+        "outline": "outline.png"
+    },
+    "name": {
+        "short": "IT Assistant Voice",
+        "full": "IT Assistant Voice — Real-time voice over Microsoft Learn"
+    },
+    "description": {
+        "short": "Ask Microsoft Learn anything, hands-free, in real time.",
+        "full": "Talk to the IT Assistant in real time — Azure AI Foundry Voice Live streams your voice to a Copilot Studio agent grounded on the Microsoft Learn MCP server. Press the mic and speak: the agent answers aloud with barge-in, HD TTS, and semantic VAD. This tab embeds the custom Voice Live web UI hosted on Azure Container Apps."
+    },
+    "accentColor": "#0078D4",
+    "staticTabs": [
+        {
+            "entityId": "it-assistant-voice",
+            "name": "IT Assistant Voice",
+            "contentUrl": "https://<FQDN>/",
+            "websiteUrl": "https://<FQDN>/",
+            "scopes": [
+                "personal"
+            ]
+        }
+    ],
+    "devicePermissions": [
+        "media"
+    ],
+    "permissions": [
+        "identity"
+    ],
+    "validDomains": [
+        "<FQDN>"
+    ]
+}

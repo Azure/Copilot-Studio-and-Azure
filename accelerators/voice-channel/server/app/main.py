@@ -14,13 +14,24 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from azure.identity.aio import DefaultAzureCredential
-from fastapi import FastAPI, WebSocket
+from fastapi import FastAPI, Request, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from app.config import ServerConfig
 from app.voice_live import VoiceLiveRelay
+
+# Hosts we allow to iframe this page — Teams + Microsoft 365 surfaces.
+# Anything else gets the default `frame-ancestors 'self'`, which blocks framing.
+_TEAMS_FRAME_ANCESTORS = " ".join([
+    "'self'",
+    "https://teams.microsoft.com",
+    "https://*.teams.microsoft.com",
+    "https://*.cloud.microsoft",
+    "https://*.office.com",
+    "https://*.microsoft365.com",
+])
 
 logging.basicConfig(
     level=os.environ.get("LOG_LEVEL", "INFO"),
@@ -62,6 +73,21 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def security_headers(request: Request, call_next) -> Response:
+    """Allow Teams + M365 to iframe the web UI; leave other responses alone.
+
+    Without `frame-ancestors`, browsers inside Teams refuse to render this
+    page (Teams sandboxes its tabs in an iframe, so same-origin doesn't
+    apply). `X-Frame-Options` is intentionally NOT set — the CSP directive
+    supersedes it, and a conflicting `X-Frame-Options: SAMEORIGIN` would
+    block Teams.
+    """
+    response: Response = await call_next(request)
+    response.headers["Content-Security-Policy"] = f"frame-ancestors {_TEAMS_FRAME_ANCESTORS}"
+    return response
 
 
 @app.get("/healthz")
