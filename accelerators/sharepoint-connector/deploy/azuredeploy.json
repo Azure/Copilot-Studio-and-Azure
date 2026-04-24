@@ -6,7 +6,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.42.1.51946",
-      "templateHash": "15872547655102943120"
+      "templateHash": "17282469380471628092"
     }
   },
   "parameters": {
@@ -41,7 +41,7 @@
   },
   "variables": {
     "shouldCreateAppRegistration": "[empty(parameters('apiAudience'))]",
-    "packageReleaseUrl": "https://github.com/Azure/Copilot-Studio-and-Azure/releases/download/sharepoint-connector-latest/sharepoint-connector.zip",
+    "packageReleaseUrl": "https://github.com/gokseloral/Copilot-Studio-and-Azure/releases/download/sharepoint-connector-latest/sharepoint-connector.zip",
     "searchIndexName": "sharepoint-index",
     "indexerSchedule": "0 0 * * * *",
     "backupSchedule": "0 0 3 * * *",
