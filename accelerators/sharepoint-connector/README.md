@@ -77,6 +77,8 @@ A ~15 minute end-to-end walkthrough — architecture, deployment, post-deploymen
 
 That's it. The template creates the Entra app registration itself — no separate helper script, no `tenantId` to paste in (it's inferred from the deployment context).
 
+> **Don't have the Entra role?** Ask an admin to run `infra/create-api-app-registration.ps1` once against your tenant, then pass the resulting clientId as `-ApiAudience <guid>` (or `apiAudience` parameter) to this deployment. The template detects a supplied value and skips its own app-registration step — see [Escape hatch when you lack Graph privileges](#escape-hatch-when-you-lack-graph-privileges) below.
+
 #### Workstation tools
 
 | Tool | Why |
@@ -117,6 +119,7 @@ The template asks for **two values** — everything else is inferred, defaulted,
 | `baseName` | ✅ | Resource-name prefix (3–16 chars). A uniqueness hash is appended for globally-unique resources. |
 | `sharePointSiteUrl` | ✅ | Full URL of the SharePoint site to monitor. |
 | `location` | optional | Azure region (default `resourceGroup().location`). Pick one that supports Azure AI Vision multimodal 4.0. |
+| `apiAudience` | optional | **Escape hatch only** — leave empty on the normal path. Supply a pre-created Entra app clientId (GUID or `api://<guid>`) when the deployer lacks `Application Administrator`. See [Escape hatch when you lack Graph privileges](#escape-hatch-when-you-lack-graph-privileges). |
 
 Handled by the template itself:
 
@@ -124,9 +127,28 @@ Handled by the template itself:
 - **`apiAudience`** — the template declares the `/api/search` Entra app registration via the Microsoft Graph Bicep extension, exposes the `access_as_user` delegated scope, and declares `GroupMember.Read.All` (Application) in the required-resource-access manifest. Admin consent on that Graph permission remains a post-deploy step (see below). The resulting client ID is emitted as the `apiAudience` deployment output.
 - **Function-app package URL** is hardcoded to the latest GitHub Release (`sharepoint-connector-latest`); edit `main.bicep` directly if you want to point at a fork.
 
+#### Escape hatch when you lack Graph privileges
+
+The normal path relies on the deployer holding **`Application Administrator`** (or any role that includes `microsoft.directory/applications/createAsOwner` / Graph `Application.ReadWrite.OwnedBy`). In large tenants, Azure RG Owners often don't have this role, and the Bicep deployment fails with `Authorization_RequestDenied — Insufficient privileges to complete the operation` against the `Microsoft.Graph/applications` resource.
+
+Workaround — ask a directory admin to run the one-shot helper once, then pass the clientId back into the template:
+
+1. **Admin side** (one-time, any shell with `az login` as an Application Administrator):
+   ```powershell
+   .\infra\create-api-app-registration.ps1 -DisplayName "sp-indexer SharePoint Connector API"
+   # → prints the clientId (GUID) to copy
+   ```
+2. **Deployer side** — pass the clientId as `-ApiAudience`:
+   ```powershell
+   .\infra\deploy.ps1 -ResourceGroup sharepoint-rg -ApiAudience 00000000-1111-2222-3333-444444444444
+   ```
+   The template detects the supplied value, skips its own `Microsoft.Graph/applications` resource entirely, and wires the Function App's `API_AUDIENCE` setting to your clientId. Both `<guid>` and `api://<guid>` forms are accepted.
+
+Everything else — app-registration admin consent, Sites.Selected, and the Copilot Studio topic — is identical to the normal path.
+
 #### Automated Deployment
 
-[![Deploy to Azure](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2FAzure%2FCopilot-Studio-and-Azure%2Fmain%2Faccelerators%2Fsharepoint-connector%2Fdeploy%2Fazuredeploy.json)
+[![Deploy to Azure](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2Fgokseloral%2FCopilot-Studio-and-Azure%2Fmain%2Faccelerators%2Fsharepoint-connector%2Fdeploy%2Fazuredeploy.json)
 
 Clicking the button opens the Azure portal's custom-deployment form pre-populated with the five parameters above. The template provisions **everything** — Storage Account (+ queue / table / containers), Log Analytics + App Insights, Azure AI Search (Basic), Microsoft Foundry / Azure AI Services multi-service (hosts Vision multimodal), Document Intelligence (Layout), Key Vault, Flex Consumption plan + Function App, and every RBAC assignment on the Function's managed identity. It also **pulls the latest CI-built function-app package** from GitHub Releases (`sharepoint-connector-latest`) via an ARM `deploymentScript` and writes it to the Function App's storage container — so the code is already running when the deployment finishes. No `func publish` step.
 

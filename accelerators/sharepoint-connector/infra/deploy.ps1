@@ -20,15 +20,29 @@
     Azure region (default: swedencentral). Pick one that supports Azure AI
     Vision multimodal 4.0.
 
+.PARAMETER ApiAudience
+    Optional escape hatch for tenants where the deployer does NOT hold the
+    `Application Administrator` Entra role. Supply the clientId (GUID) of a
+    pre-created Entra app registration; the template will then skip its own
+    app-registration step and wire the Function App to this clientId instead.
+    Use infra/create-api-app-registration.ps1 (run by an admin) to create one.
+    Leave unset on the common path — the template creates the app itself.
+
 .EXAMPLE
     .\deploy.ps1 -ResourceGroup sharepoint-rg
+
+.EXAMPLE
+    # Deployer lacks Graph privileges; admin pre-created the app registration:
+    .\deploy.ps1 -ResourceGroup sharepoint-rg -ApiAudience 00000000-1111-2222-3333-444444444444
 #>
 
 param(
     [Parameter(Mandatory)]
     [string]$ResourceGroup,
 
-    [string]$Location = "swedencentral"
+    [string]$Location = "swedencentral",
+
+    [string]$ApiAudience = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -65,12 +79,20 @@ Write-Host "`nDeploying infrastructure + Entra app registration + seeding functi
 
 $bicepFile = Join-Path $scriptDir "main.bicep"
 
-az deployment group create `
-    --resource-group $ResourceGroup `
-    --template-file $bicepFile `
-    --parameters $paramFile `
-    --parameters location=$Location `
-    --output table
+$deployArgs = @(
+    "deployment", "group", "create",
+    "--resource-group", $ResourceGroup,
+    "--template-file", $bicepFile,
+    "--parameters", $paramFile,
+    "--parameters", "location=$Location"
+)
+if ($ApiAudience) {
+    Write-Host "  apiAudience:      $ApiAudience (escape-hatch — template will skip app-registration creation)" -ForegroundColor Gray
+    $deployArgs += @("--parameters", "apiAudience=$ApiAudience")
+}
+$deployArgs += @("--output", "table")
+
+az @deployArgs
 
 if ($LASTEXITCODE -ne 0) {
     Write-Error "Deployment failed"

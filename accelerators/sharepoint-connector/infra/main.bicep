@@ -42,9 +42,10 @@ param location string = resourceGroup().location
 @description('Full SharePoint site URL the connector will monitor, e.g. https://contoso.sharepoint.com/sites/YourSite')
 param sharePointSiteUrl string
 
-// NOTE: `apiAudience` is no longer a parameter — the template creates the
-// Entra app registration for /api/search itself (see `apiApp` resource
-// below) and wires its appId directly into the Function App.
+@description('Optional escape hatch. When empty (the default), the template creates the Entra app registration for /api/search itself via the Microsoft Graph Bicep extension — the deployer needs the `Application Administrator` Entra role for that. When non-empty, the template skips creating the app and uses this client ID instead — useful when the deployer does NOT have Graph privileges and an admin has pre-created the app registration via infra/create-api-app-registration.ps1. Accepts a bare GUID or an `api://<clientId>` URI.')
+param apiAudience string = ''
+
+var shouldCreateAppRegistration = empty(apiAudience)
 
 // ============================================================================
 // Operational defaults — baked in; override post-deployment via app settings
@@ -317,7 +318,7 @@ var accessAsUserScopeId = guid(resourceGroup().id, 'access_as_user')
 var graphAppId = '00000003-0000-0000-c000-000000000000'
 var groupMemberReadAllRoleId = '98830695-27a2-44f7-8c18-0c3ebc9698f6'
 
-resource apiApp 'Microsoft.Graph/applications@v1.0' = {
+resource apiApp 'Microsoft.Graph/applications@v1.0' = if (shouldCreateAppRegistration) {
   uniqueName: apiAppUniqueName
   displayName: '${baseName} SharePoint Connector API'
   signInAudience: 'AzureADMyOrg'
@@ -350,6 +351,10 @@ resource apiApp 'Microsoft.Graph/applications@v1.0' = {
     }
   ]
 }
+
+// Normalise `api://<clientId>` → `<clientId>` so either form works for apiAudience.
+var suppliedClientId = startsWith(apiAudience, 'api://') ? substring(apiAudience, 6) : apiAudience
+var effectiveApiClientId = shouldCreateAppRegistration ? apiApp!.appId : suppliedClientId
 
 // ============================================================================
 // One-shot code seeding — user-assigned MI + deploymentScript that downloads
@@ -509,7 +514,7 @@ resource functionApp 'Microsoft.Web/sites@2024-04-01' = {
         { name: 'FORCE_RECREATE_INDEX', value: forceRecreateIndex ? 'true' : 'false' }
 
         // Query-time security trimming (/api/search, called from OnKnowledgeRequested topic)
-        { name: 'API_AUDIENCE', value: apiApp.appId }
+        { name: 'API_AUDIENCE', value: effectiveApiClientId }
         { name: 'ALWAYS_ALLOWED_IDS', value: alwaysAllowedIds }
 
         // Reference to the provisioned Key Vault — admins can add CLIENT_SECRET here
@@ -630,5 +635,5 @@ output searchEndpoint string = searchEndpoint
 output foundryEndpoint string = foundryEndpoint
 output docIntelEndpoint string = docIntelEndpoint
 output keyVaultName string = keyVault.name
-output apiAudience string = apiApp.appId
-output apiAppDisplayName string = apiApp.displayName
+output apiAudience string = effectiveApiClientId
+output apiAppDisplayName string = shouldCreateAppRegistration ? apiApp!.displayName : 'pre-created (apiAudience parameter supplied)'

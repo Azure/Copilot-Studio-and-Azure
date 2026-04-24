@@ -26,3 +26,12 @@ param location = 'swedencentral'
 // (Grant the Function's managed identity `Sites.Selected` on just this
 //  site via infra/grant-site-permission.ps1 after deployment.)
 param sharePointSiteUrl = 'https://yourcompany.sharepoint.com/sites/YourSite'
+
+// Escape hatch — LEAVE EMPTY on the normal path. The template will declare
+// the /api/search Entra app registration itself via the Microsoft Graph
+// Bicep extension (requires the deployer to hold `Application Administrator`).
+//
+// Only populate this when the deployer lacks Graph privileges and an admin
+// has pre-created the app registration via infra/create-api-app-registration.ps1.
+// Accepts a bare GUID or `api://<clientId>`.
+// param apiAudience = '00000000-1111-2222-3333-444444444444'
