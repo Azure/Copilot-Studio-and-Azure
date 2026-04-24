@@ -6,7 +6,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.42.1.51946",
-      "templateHash": "1293425673372803386"
+      "templateHash": "15872547655102943120"
     }
   },
   "parameters": {
@@ -30,9 +30,17 @@
       "metadata": {
         "description": "Full SharePoint site URL the connector will monitor, e.g. https://contoso.sharepoint.com/sites/YourSite"
       }
+    },
+    "apiAudience": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Optional escape hatch. When empty (the default), the template creates the Entra app registration for /api/search itself via the Microsoft Graph Bicep extension — the deployer needs the `Application Administrator` Entra role for that. When non-empty, the template skips creating the app and uses this client ID instead — useful when the deployer does NOT have Graph privileges and an admin has pre-created the app registration via infra/create-api-app-registration.ps1. Accepts a bare GUID or an `api://<clientId>` URI."
+      }
     }
   },
   "variables": {
+    "shouldCreateAppRegistration": "[empty(parameters('apiAudience'))]",
     "packageReleaseUrl": "https://github.com/Azure/Copilot-Studio-and-Azure/releases/download/sharepoint-connector-latest/sharepoint-connector.zip",
     "searchIndexName": "sharepoint-index",
     "indexerSchedule": "0 0 * * * *",
@@ -87,7 +95,8 @@
     "apiAppUniqueName": "[format('sharepoint-connector-api-{0}', variables('nameSuffix'))]",
     "accessAsUserScopeId": "[guid(resourceGroup().id, 'access_as_user')]",
     "graphAppId": "00000003-0000-0000-c000-000000000000",
-    "groupMemberReadAllRoleId": "98830695-27a2-44f7-8c18-0c3ebc9698f6"
+    "groupMemberReadAllRoleId": "98830695-27a2-44f7-8c18-0c3ebc9698f6",
+    "suppliedClientId": "[if(startsWith(parameters('apiAudience'), 'api://'), substring(parameters('apiAudience'), 6), parameters('apiAudience'))]"
   },
   "imports": {
     "microsoftGraphV1_0": {
@@ -302,6 +311,7 @@
       }
     },
     "apiApp": {
+      "condition": "[variables('shouldCreateAppRegistration')]",
       "import": "microsoftGraphV1_0",
       "type": "Microsoft.Graph/applications@v1.0",
       "properties": {
@@ -596,7 +606,7 @@
             },
             {
               "name": "API_AUDIENCE",
-              "value": "[reference('apiApp').appId]"
+              "value": "[if(variables('shouldCreateAppRegistration'), reference('apiApp').appId, variables('suppliedClientId'))]"
             },
             {
               "name": "ALWAYS_ALLOWED_IDS",
@@ -785,11 +795,11 @@
     },
     "apiAudience": {
       "type": "string",
-      "value": "[reference('apiApp').appId]"
+      "value": "[if(variables('shouldCreateAppRegistration'), reference('apiApp').appId, variables('suppliedClientId'))]"
     },
     "apiAppDisplayName": {
       "type": "string",
-      "value": "[reference('apiApp').displayName]"
+      "value": "[if(variables('shouldCreateAppRegistration'), reference('apiApp').displayName, 'pre-created (apiAudience parameter supplied)')]"
     }
   }
 }
