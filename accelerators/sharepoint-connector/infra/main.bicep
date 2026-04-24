@@ -1,145 +1,97 @@
 // SharePoint → Azure AI Search Connector — Pattern A (unified multimodal).
 //
-// Deploys:
-//   * Function App (Flex Consumption, Python 3.11) with system-assigned MI
-//   * Storage Account (blob + queue + table services) with state/images containers
-//   * App Insights + Log Analytics
-//   * Optional Key Vault (Graph CLIENT_SECRET fallback, conditional)
-//   * Optional Document Intelligence (conditional, for Layout-aware extraction)
-//   * RBAC assignments for the MI
+// End-to-end deployment. Everything is created by this template:
+//   * Storage Account (blob + queue + table services) with the containers /
+//     queues / tables the connector uses
+//   * Log Analytics + Application Insights
+//   * Azure AI Search (Basic tier — vector search requires Basic or above)
+//   * Microsoft Foundry / Azure AI Services multi-service account (hosts
+//     Azure AI Vision multimodal embeddings)
+//   * Document Intelligence account (Layout model for PDF/Office extraction)
+//   * Key Vault (for CLIENT_SECRET fallback if the admin adds one later)
+//   * Flex Consumption plan + Function App with system-assigned managed identity
+//   * Every RBAC role assignment on the MI
 //
-// Embeddings: Azure AI Vision multimodal 4.0 (Florence) via the Foundry /
-// multi-service Azure AI Services resource — produces 1024d vectors for both
-// text and images in the same space. No Azure OpenAI dependency.
+// Required parameters kept to the minimum that's genuinely user-specific.
+// All operational tuning knobs (schedules, concurrency, retention, extensions,
+// processing modes) are set to sensible defaults in this file and can be
+// tweaked post-deployment via Function App settings if needed.
 
-@description('Base name for all resources (lowercase, no spaces)')
+// ============================================================================
+// Required parameters — user-supplied
+// ============================================================================
+
+@description('Base name for every resource. Lowercase letters / digits / hyphens. Used as a prefix; a short uniqueness hash is appended where Azure requires globally-unique names.')
+@minLength(3)
+@maxLength(16)
 param baseName string
 
-@description('Azure region for deployment')
+@description('Azure region. Pick one that supports Azure AI Vision multimodal 4.0 (see Microsoft Learn for the current list).')
 param location string = resourceGroup().location
 
-@description('Tenant ID for Entra ID / Graph API')
+@description('Microsoft Entra tenant ID (Graph API authority for the SharePoint site).')
 param tenantId string
 
-@description('SharePoint site URL (e.g. https://company.sharepoint.com/sites/MySite)')
+@description('Full SharePoint site URL the connector will monitor, e.g. https://contoso.sharepoint.com/sites/YourSite')
 param sharePointSiteUrl string
 
-@description('Azure AI Search endpoint')
-param searchEndpoint string
+@description('Application (client) ID of the Entra app registration that represents the /api/search endpoint. Copilot Studio requests tokens for this audience via the OnKnowledgeRequested topic. Use the client ID GUID OR the App ID URI (e.g. api://<clientId>).')
+param apiAudience string
 
-@description('Azure AI Search resource ID (for RBAC scope)')
-param searchResourceId string
+@description('Public URL of the CI-built function-app zip. The deployment seeds it into the Function App storage container so no post-deploy `func publish` is needed. Override to point at a fork release URL if the code has been customised.')
+param packageReleaseUrl string = 'https://github.com/Azure/Copilot-Studio-and-Azure/releases/download/sharepoint-connector-latest/sharepoint-connector.zip'
 
-@description('Search index name')
-param searchIndexName string = 'sharepoint-index'
+// ============================================================================
+// Operational defaults — baked in; override post-deployment via app settings
+// ============================================================================
 
-@description('Microsoft Foundry / Azure AI Services multi-service endpoint. Hosts Azure AI Vision multimodal embeddings (required) and optionally Document Intelligence.')
-param foundryEndpoint string
+var searchIndexName = 'sharepoint-index'
+var indexerSchedule = '0 0 * * * *'            // every hour
+var backupSchedule = '0 0 3 * * *'             // 03:00 UTC daily
+var backupRetentionDays = 7
 
-@description('Foundry / Azure AI Services resource ID (for RBAC scope)')
-param foundryResourceId string
+var processingMode = 'since-last-run'
+var startDate = ''
+var sharePointLibraries = ''                   // empty = all libraries
+var sharePointRootPaths = ''                   // empty = whole library
 
-@description('Azure AI Vision multimodal embeddings model version.')
-param multimodalModelVersion string = '2023-04-15'
+var indexedExtensions = '.pdf,.docx,.docm,.xlsx,.xlsm,.pptx,.pptm,.txt,.md,.csv,.json,.xml,.kml,.html,.htm,.rtf,.eml,.epub,.msg,.odt,.ods,.odp,.zip,.gz,.png,.jpg,.jpeg,.tiff,.bmp'
+var maxFileSizeMb = 500
+var vectoriseConcurrency = 8
+var multimodalMaxInFlight = 8
+var reconcileEveryNRuns = 24
 
-@description('CRON schedule for the indexer (default: every hour)')
-param indexerSchedule string = '0 0 * * * *'
+var functionProcessingMode = 'queue'
+var instanceMemoryMB = 4096
+var multimodalModelVersion = '2023-04-15'
 
-@description('Processing mode: full | since-date | since-last-run')
-@allowed([
-  'full'
-  'since-date'
-  'since-last-run'
-])
-param processingMode string = 'since-last-run'
+var imagesContainerName = 'images'
+var extractImages = true
+var forceRecreateIndex = false
+var alwaysAllowedIds = ''
 
-@description('Absolute start date (ISO-8601 UTC). Only used when processingMode = since-date.')
-param startDate string = ''
+var searchSku = 'basic'                        // vector search requires Basic+
 
-@description('SharePoint libraries to index (comma-separated, empty = all)')
-param sharePointLibraries string = ''
-
-@description('File extensions to index.')
-param indexedExtensions string = '.pdf,.docx,.docm,.xlsx,.xlsm,.pptx,.pptm,.txt,.md,.csv,.json,.xml,.kml,.html,.htm,.rtf,.eml,.epub,.msg,.odt,.ods,.odp,.zip,.gz,.png,.jpg,.jpeg,.tiff,.bmp'
-
-@description('Max file size in MB (files larger than this are skipped)')
-param maxFileSizeMb string = '500'
-
-@description('Function processing mode: queue (default, scales to >50 files) or inline (legacy single-function)')
-@allowed([
-  'queue'
-  'inline'
-])
-param functionProcessingMode string = 'queue'
-
-@description('Function instance memory in MB (Flex Consumption: 512/1024/2048/4096)')
-@allowed([
-  512
-  1024
-  2048
-  4096
-])
-param instanceMemoryMB int = 4096
-
-@description('Use CLIENT_SECRET fallback for Graph API (requires Key Vault). When false, uses managed identity only.')
-param useClientSecret bool = false
-
-@description('Client secret value. Only used when useClientSecret = true. Passed via secure CLI parameter.')
-@secure()
-param clientSecretValue string = ''
-
-@description('Provision a new Document Intelligence resource for structured layout extraction. Optional — only PDF/DOCX/PPTX/XLSX benefit. Standalone image files go direct to Azure AI Vision multimodal.')
-param provisionDocIntel bool = false
-
-@description('Existing Document Intelligence endpoint (leave empty to skip; PDF/Office fall back to hand-written extractors).')
-param docIntelEndpoint string = ''
-
-@description('Existing Document Intelligence resource ID (for RBAC scope)')
-param docIntelResourceId string = ''
-
-@description('Blob container name for extracted image crops (citations).')
-param imagesContainerName string = 'images'
-
-@description('DESTRUCTIVE: drops and recreates the AI Search index on next run. Set once after a breaking schema change, then revert to false.')
-param forceRecreateIndex bool = false
-
-@description('Expected audience for tokens hitting the /api/search endpoint. Set to the API app registration client ID (or Application ID URI). When empty, the endpoint is effectively disabled.')
-param apiAudience string = ''
-
-@description('Always-allowed Entra object IDs. Comma-separated. Useful for tenant-wide share groups.')
-param alwaysAllowedIds string = ''
-
-@description('Enable image handling (requires foundryEndpoint with Azure AI Vision multimodal available). Default true.')
-param extractImages bool = true
-
-@description('Optional comma-separated folder paths (relative to each drive root) to scope the indexer to. Empty = whole library. Example: "Finance/Reports,HR/Policies".')
-param sharePointRootPaths string = ''
-
-@description('Per-file chunk vectorisation concurrency inside a worker. Bounded at the source by MULTIMODAL_MAX_IN_FLIGHT.')
-param vectoriseConcurrency int = 8
-
-@description('Hard ceiling on in-flight Azure AI Vision embedding requests per Function instance (protects the Vision endpoint from overload).')
-param multimodalMaxInFlight int = 8
-
-@description('Cadence (in indexer runs) at which a belt-and-braces full reconciliation scans for orphans. 0 = never.')
-param reconcileEveryNRuns int = 24
-
-@description('CRON schedule for the nightly index backup (default: 03:00 UTC daily).')
-param backupSchedule string = '0 0 3 * * *'
-
-@description('Number of dated backup folders to keep in the backup container.')
-param backupRetentionDays int = 7
-
+// ============================================================================
 // Derived names
-var functionAppName = '${baseName}-func'
-var storageName = replace('${baseName}st', '-', '')
+// ============================================================================
+
+var nameSuffix = take(uniqueString(resourceGroup().id, baseName), 6)
+
+var functionAppName = '${baseName}-func-${nameSuffix}'
+// baseName is @minLength 3 / @maxLength 16; stripping hyphens plus the literal
+// 'st' (2 chars) + nameSuffix (6 chars) yields at most 24 chars and at least
+// 8 (all-hyphen degenerate case) — both within Azure's storage-name bounds.
+var storageName = toLower('${replace(baseName, '-', '')}st${nameSuffix}')
 var appInsightsName = '${baseName}-insights'
 var logAnalyticsName = '${baseName}-logs'
-var keyVaultName = take(replace('${baseName}-kv-${uniqueString(resourceGroup().id)}', '--', '-'), 24)
-var docIntelName = '${baseName}-docintel'
+var keyVaultName = take('${baseName}-kv-${nameSuffix}', 24)
+var searchServiceName = take(toLower('${baseName}-search-${nameSuffix}'), 60)
+var foundryAccountName = take('${baseName}-foundry-${nameSuffix}', 60)
+var docIntelName = take('${baseName}-docintel-${nameSuffix}', 60)
+
 var deployContainerName = 'app-package'
 var stateContainerName = 'state'
-var effectiveImagesContainer = imagesContainerName
 var backupContainerName = 'backup'
 var indexerQueueName = 'sp-indexer-q'
 var indexerPoisonQueueName = 'sp-indexer-q-poison'
@@ -147,36 +99,28 @@ var failedFilesTableName = 'failedFiles'
 var runStateTableName = 'runState'
 var watermarkTableName = 'watermark'
 
-// Extract resource names from resource IDs
-var searchServiceName = last(split(searchResourceId, '/'))
-var foundryAccountName = last(split(foundryResourceId, '/'))
-var effectiveDocIntelName = provisionDocIntel ? docIntelName : (empty(docIntelResourceId) ? '' : last(split(docIntelResourceId, '/')))
-var effectiveDocIntelEndpoint = provisionDocIntel ? 'https://${docIntelName}.cognitiveservices.azure.com' : docIntelEndpoint
+var foundryEndpoint = 'https://${foundryAccountName}.cognitiveservices.azure.com'
+var docIntelEndpoint = 'https://${docIntelName}.cognitiveservices.azure.com'
+var searchEndpoint = 'https://${searchServiceName}.search.windows.net'
 
+// ============================================================================
 // Built-in role definition IDs
+// ============================================================================
+
 var searchDataContributorRoleId = '8ebe5a00-799e-43f5-93ac-243d3dce84a7'
 var searchServiceContributorRoleId = '7ca78c08-252a-4471-8644-bb5ff32d4ba0'
 var cognitiveServicesUserRoleId = 'a97b65f3-24c7-4388-baec-2e87135dc908'
 var storageBlobDataOwnerRoleId = 'b7e6dc6d-f1e8-4753-8033-0f276bb0955b'
+var storageBlobDataContributorRoleId = 'ba92f5b4-2d11-453d-a403-e96b0029c9fe'
 var storageAccountContributorRoleId = '17d1049b-9a84-46fb-8f53-869881c3d3ab'
 var storageQueueDataContributorRoleId = '974c5e8b-45b9-4653-ba55-5f855dd0fb88'
 var storageTableDataContributorRoleId = '0a9a7e1f-b9d0-4cc4-a60d-0319b160aaa3'
 var keyVaultSecretsUserRoleId = '4633458b-17de-408a-b874-0445c86b69e6'
 
-// Existing resources for RBAC scoping
-resource searchService 'Microsoft.Search/searchServices@2024-06-01-preview' existing = {
-  name: searchServiceName
-}
+// ============================================================================
+// Storage
+// ============================================================================
 
-resource foundryAccount 'Microsoft.CognitiveServices/accounts@2024-10-01' existing = {
-  name: foundryAccountName
-}
-
-resource existingDocIntel 'Microsoft.CognitiveServices/accounts@2024-10-01' existing = if (!provisionDocIntel && !empty(docIntelResourceId)) {
-  name: effectiveDocIntelName
-}
-
-// Storage Account
 resource storageAccount 'Microsoft.Storage/storageAccounts@2023-05-01' = {
   name: storageName
   location: location
@@ -207,10 +151,9 @@ resource stateContainer 'Microsoft.Storage/storageAccounts/blobServices/containe
 
 resource imagesContainer 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-05-01' = {
   parent: blobService
-  name: effectiveImagesContainer
+  name: imagesContainerName
 }
 
-// Nightly index + state backup lands here (retention managed in Python).
 resource backupContainer 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-05-01' = {
   parent: blobService
   name: backupContainerName
@@ -251,7 +194,10 @@ resource watermarkTable 'Microsoft.Storage/storageAccounts/tableServices/tables@
   name: watermarkTableName
 }
 
-// Log Analytics
+// ============================================================================
+// Observability
+// ============================================================================
+
 resource logAnalytics 'Microsoft.OperationalInsights/workspaces@2023-09-01' = {
   name: logAnalyticsName
   location: location
@@ -261,7 +207,6 @@ resource logAnalytics 'Microsoft.OperationalInsights/workspaces@2023-09-01' = {
   }
 }
 
-// App Insights
 resource appInsights 'Microsoft.Insights/components@2020-02-02' = {
   name: appInsightsName
   location: location
@@ -272,8 +217,60 @@ resource appInsights 'Microsoft.Insights/components@2020-02-02' = {
   }
 }
 
-// Key Vault (conditional)
-resource keyVault 'Microsoft.KeyVault/vaults@2023-07-01' = if (useClientSecret) {
+// ============================================================================
+// Azure AI Search (Basic tier — required for vector search)
+// ============================================================================
+
+resource searchService 'Microsoft.Search/searchServices@2024-06-01-preview' = {
+  name: searchServiceName
+  location: location
+  sku: { name: searchSku }
+  properties: {
+    replicaCount: 1
+    partitionCount: 1
+    hostingMode: 'default'
+    publicNetworkAccess: 'enabled'
+    semanticSearch: 'standard'
+  }
+}
+
+// ============================================================================
+// Foundry / Azure AI Services (multi-service) — hosts Vision multimodal
+// ============================================================================
+
+resource foundryAccount 'Microsoft.CognitiveServices/accounts@2024-10-01' = {
+  name: foundryAccountName
+  location: location
+  kind: 'AIServices'
+  sku: { name: 'S0' }
+  properties: {
+    customSubDomainName: foundryAccountName
+    publicNetworkAccess: 'Enabled'
+  }
+  identity: { type: 'SystemAssigned' }
+}
+
+// ============================================================================
+// Document Intelligence — Layout model for PDF/Office extraction (mandatory)
+// ============================================================================
+
+resource docIntel 'Microsoft.CognitiveServices/accounts@2024-10-01' = {
+  name: docIntelName
+  location: location
+  kind: 'FormRecognizer'
+  sku: { name: 'S0' }
+  properties: {
+    customSubDomainName: docIntelName
+    publicNetworkAccess: 'Enabled'
+  }
+  identity: { type: 'SystemAssigned' }
+}
+
+// ============================================================================
+// Key Vault (mandatory — empty by default; admins can add secrets later)
+// ============================================================================
+
+resource keyVault 'Microsoft.KeyVault/vaults@2023-07-01' = {
   name: keyVaultName
   location: location
   properties: {
@@ -286,28 +283,75 @@ resource keyVault 'Microsoft.KeyVault/vaults@2023-07-01' = if (useClientSecret) 
   }
 }
 
-resource graphClientSecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = if (useClientSecret) {
-  parent: keyVault
-  name: 'graph-client-secret'
-  properties: {
-    value: clientSecretValue
-  }
-}
+// ============================================================================
+// One-shot code seeding — user-assigned MI + deploymentScript that downloads
+// the CI-built package from GitHub Releases and writes it to the function's
+// deploy container. No post-deploy `func publish` needed.
+// ============================================================================
 
-// Document Intelligence (conditional)
-resource docIntel 'Microsoft.CognitiveServices/accounts@2024-10-01' = if (provisionDocIntel) {
-  name: docIntelName
+resource deployerIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {
+  name: '${baseName}-deployer-${nameSuffix}'
   location: location
-  kind: 'FormRecognizer'
-  sku: { name: 'S0' }
-  properties: {
-    customSubDomainName: docIntelName
-    publicNetworkAccess: 'Enabled'
-  }
-  identity: { type: 'SystemAssigned' }
 }
 
-// Flex Consumption Plan
+resource deployerStorageRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(storageAccount.id, storageBlobDataContributorRoleId, deployerIdentity.id)
+  scope: storageAccount
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', storageBlobDataContributorRoleId)
+    principalId: deployerIdentity.properties.principalId
+    principalType: 'ServicePrincipal'
+  }
+}
+
+resource publishCode 'Microsoft.Resources/deploymentScripts@2023-08-01' = {
+  name: '${baseName}-publish-code'
+  location: location
+  kind: 'AzureCLI'
+  identity: {
+    type: 'UserAssigned'
+    userAssignedIdentities: {
+      '${deployerIdentity.id}': {}
+    }
+  }
+  properties: {
+    azCliVersion: '2.65.0'
+    timeout: 'PT10M'
+    retentionInterval: 'PT1H'
+    cleanupPreference: 'OnSuccess'
+    environmentVariables: [
+      { name: 'STORAGE_ACCOUNT', value: storageAccount.name }
+      { name: 'CONTAINER', value: deployContainerName }
+      { name: 'PACKAGE_URL', value: packageReleaseUrl }
+      { name: 'PACKAGE_BLOB', value: 'function-package.zip' }
+    ]
+    scriptContent: '''
+      set -eu
+      TEMP=$(mktemp -d)
+      cd "$TEMP"
+      echo "Downloading $PACKAGE_URL"
+      curl -sSL --fail -o package.zip "$PACKAGE_URL"
+      echo "Uploading to $STORAGE_ACCOUNT/$CONTAINER/$PACKAGE_BLOB"
+      az storage blob upload \
+        --account-name "$STORAGE_ACCOUNT" \
+        --container-name "$CONTAINER" \
+        --name "$PACKAGE_BLOB" \
+        --file package.zip \
+        --auth-mode login \
+        --overwrite
+      echo "Upload complete."
+    '''
+  }
+  dependsOn: [
+    deployContainer
+    deployerStorageRole
+  ]
+}
+
+// ============================================================================
+// Flex Consumption plan + Function App
+// ============================================================================
+
 resource flexPlan 'Microsoft.Web/serverfarms@2024-04-01' = {
   name: '${baseName}-plan'
   location: location
@@ -316,12 +360,16 @@ resource flexPlan 'Microsoft.Web/serverfarms@2024-04-01' = {
   properties: { reserved: true }
 }
 
-// Function App
 resource functionApp 'Microsoft.Web/sites@2024-04-01' = {
   name: functionAppName
   location: location
   kind: 'functionapp,linux'
   identity: { type: 'SystemAssigned' }
+  dependsOn: [
+    // Ensure the code package is in the container before the Function App
+    // tries to start; otherwise the first-startup pull would race.
+    publishCode
+  ]
   properties: {
     serverFarmId: flexPlan.id
     httpsOnly: true
@@ -340,7 +388,7 @@ resource functionApp 'Microsoft.Web/sites@2024-04-01' = {
       runtime: { name: 'python', version: '3.11' }
     }
     siteConfig: {
-      appSettings: concat([
+      appSettings: [
         { name: 'AzureWebJobsStorage__accountName', value: storageAccount.name }
         { name: 'AzureWebJobsStorage__credential', value: 'managedidentity' }
         { name: 'FUNCTIONS_EXTENSION_VERSION', value: '~4' }
@@ -356,42 +404,38 @@ resource functionApp 'Microsoft.Web/sites@2024-04-01' = {
         { name: 'INDEXED_EXTENSIONS', value: indexedExtensions }
         { name: 'INDEXER_SCHEDULE', value: indexerSchedule }
 
-        // Processing mode
+        // Processing
         { name: 'PROCESSING_MODE', value: processingMode }
         { name: 'START_DATE', value: startDate }
         { name: 'FUNCTION_PROCESSING_MODE', value: functionProcessingMode }
 
-        // Large file handling
-        { name: 'MAX_FILE_SIZE_MB', value: maxFileSizeMb }
+        // Large file handling + concurrency
+        { name: 'MAX_FILE_SIZE_MB', value: string(maxFileSizeMb) }
         { name: 'MAX_CONCURRENCY', value: '4' }
         { name: 'CHUNK_SIZE', value: '2000' }
         { name: 'CHUNK_OVERLAP', value: '200' }
-
-        // Per-file chunk-vectorisation concurrency + Vision rate-limit ceiling
         { name: 'VECTORISE_CONCURRENCY', value: string(vectoriseConcurrency) }
         { name: 'MULTIMODAL_MAX_IN_FLIGHT', value: string(multimodalMaxInFlight) }
         { name: 'RECONCILE_EVERY_N_RUNS', value: string(reconcileEveryNRuns) }
 
-        // Index backup
-        { name: 'BACKUP_SCHEDULE', value: backupSchedule }
-        { name: 'BACKUP_CONTAINER', value: backupContainerName }
-        { name: 'BACKUP_RETENTION_DAYS', value: string(backupRetentionDays) }
-
-        // State store
+        // State store (Blob / Queue / Table)
         { name: 'STATE_CONTAINER', value: stateContainerName }
         { name: 'INDEXER_QUEUE_NAME', value: indexerQueueName }
         { name: 'FAILED_FILES_TABLE', value: failedFilesTableName }
         { name: 'RUN_STATE_TABLE', value: runStateTableName }
         { name: 'WATERMARK_TABLE', value: watermarkTableName }
 
-        // Pattern A — unified multimodal embeddings
+        // Backup
+        { name: 'BACKUP_SCHEDULE', value: backupSchedule }
+        { name: 'BACKUP_CONTAINER', value: backupContainerName }
+        { name: 'BACKUP_RETENTION_DAYS', value: string(backupRetentionDays) }
+
+        // Multimodal embeddings + Document Intelligence (both always created)
         { name: 'MULTIMODAL_ENDPOINT', value: foundryEndpoint }
         { name: 'MULTIMODAL_MODEL_VERSION', value: multimodalModelVersion }
-        { name: 'IMAGES_CONTAINER', value: effectiveImagesContainer }
+        { name: 'DOCINTEL_ENDPOINT', value: docIntelEndpoint }
+        { name: 'IMAGES_CONTAINER', value: imagesContainerName }
         { name: 'EXTRACT_IMAGES', value: extractImages ? 'true' : 'false' }
-
-        // Optional Document Intelligence (layout-aware extraction)
-        { name: 'DOCINTEL_ENDPOINT', value: effectiveDocIntelEndpoint }
 
         // Destructive index-recreate flag (unset after one run)
         { name: 'FORCE_RECREATE_INDEX', value: forceRecreateIndex ? 'true' : 'false' }
@@ -399,14 +443,20 @@ resource functionApp 'Microsoft.Web/sites@2024-04-01' = {
         // Query-time security trimming (/api/search, called from OnKnowledgeRequested topic)
         { name: 'API_AUDIENCE', value: apiAudience }
         { name: 'ALWAYS_ALLOWED_IDS', value: alwaysAllowedIds }
-      ], useClientSecret ? [
-        { name: 'CLIENT_SECRET', value: '@Microsoft.KeyVault(SecretUri=${useClientSecret ? keyVault!.properties.vaultUri : ''}secrets/graph-client-secret/)' }
-      ] : [])
+
+        // Reference to the provisioned Key Vault — admins can add CLIENT_SECRET here
+        // later via `@Microsoft.KeyVault(SecretUri=...)` app setting, without redeploy.
+        { name: 'KEY_VAULT_URI', value: keyVault.properties.vaultUri }
+      ]
     }
   }
 }
 
-// RBAC — Azure AI Search (Index Data Contributor + Service Contributor)
+// ============================================================================
+// RBAC assignments on the Function App's managed identity
+// ============================================================================
+
+// Azure AI Search
 resource searchDataContributorAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
   name: guid(searchService.id, searchDataContributorRoleId, functionApp.id)
   scope: searchService
@@ -427,7 +477,7 @@ resource searchServiceContributorAssignment 'Microsoft.Authorization/roleAssignm
   }
 }
 
-// RBAC — Foundry / Azure AI Services (Cognitive Services User for vision multimodal embeddings)
+// Foundry / AI Services (Vision multimodal)
 resource foundryAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
   name: guid(foundryAccount.id, cognitiveServicesUserRoleId, functionApp.id)
   scope: foundryAccount
@@ -438,8 +488,8 @@ resource foundryAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' 
   }
 }
 
-// RBAC — Document Intelligence (conditional, new)
-resource docIntelAssignmentNew 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (provisionDocIntel) {
+// Document Intelligence
+resource docIntelAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
   name: guid(docIntel.id, cognitiveServicesUserRoleId, functionApp.id)
   scope: docIntel
   properties: {
@@ -449,18 +499,7 @@ resource docIntelAssignmentNew 'Microsoft.Authorization/roleAssignments@2022-04-
   }
 }
 
-// RBAC — Document Intelligence (conditional, existing same-RG)
-resource docIntelAssignmentExisting 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (!provisionDocIntel && !empty(docIntelResourceId) && contains(docIntelResourceId, resourceGroup().name)) {
-  name: guid(docIntelResourceId, cognitiveServicesUserRoleId, functionApp.id)
-  scope: existingDocIntel
-  properties: {
-    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', cognitiveServicesUserRoleId)
-    principalId: functionApp.identity.principalId
-    principalType: 'ServicePrincipal'
-  }
-}
-
-// RBAC — Storage (blob / queue / table)
+// Storage (blob / queue / table / account)
 resource storageBlobDataOwnerAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
   name: guid(storageAccount.id, storageBlobDataOwnerRoleId, functionApp.id)
   scope: storageAccount
@@ -501,8 +540,8 @@ resource storageTableDataContributorAssignment 'Microsoft.Authorization/roleAssi
   }
 }
 
-// RBAC — Key Vault (conditional)
-resource keyVaultSecretsUserAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (useClientSecret) {
+// Key Vault
+resource keyVaultSecretsUserAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
   name: guid(keyVault.id, keyVaultSecretsUserRoleId, functionApp.id)
   scope: keyVault
   properties: {
@@ -512,9 +551,14 @@ resource keyVaultSecretsUserAssignment 'Microsoft.Authorization/roleAssignments@
   }
 }
 
+// ============================================================================
+// Outputs
+// ============================================================================
+
 output functionAppName string = functionApp.name
 output functionAppPrincipalId string = functionApp.identity.principalId
 output storageAccountName string = storageAccount.name
-output keyVaultName string = useClientSecret ? keyVault!.name : ''
-output docIntelEndpoint string = effectiveDocIntelEndpoint
-output multimodalEndpoint string = foundryEndpoint
+output searchEndpoint string = searchEndpoint
+output foundryEndpoint string = foundryEndpoint
+output docIntelEndpoint string = docIntelEndpoint
+output keyVaultName string = keyVault.name

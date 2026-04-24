@@ -1,64 +1,45 @@
 <#
 .SYNOPSIS
-    Deploy the SharePoint Connector as an Azure Function App.
+    Deploy the SharePoint Connector end-to-end.
 
 .DESCRIPTION
-    1. Creates infrastructure via Bicep (Function App, Storage + Queue/Table/State,
-       App Insights, optional Key Vault, optional Document Intelligence, RBAC)
-    2. Deploys the function code via Azure Functions Core Tools
+    Runs the Bicep template against the target resource group. The template
+    provisions every Azure resource, pulls the latest CI-built function-app
+    package from GitHub Releases via an ARM deploymentScript, and seeds the
+    Function App's storage container so the code is ready on first startup.
+
+    No separate `func publish` step is required — just run this script.
+
+    Required values live in `infra/main.bicepparam` (baseName, tenantId,
+    sharePointSiteUrl, apiAudience). Everything else is defaulted inside
+    `main.bicep` and can be tuned post-deployment via Function App settings.
 
 .PARAMETER ResourceGroup
-    Target resource group name.
+    Target resource group. Will be created if it doesn't already exist.
 
 .PARAMETER Location
     Azure region (default: swedencentral).
 
-.PARAMETER BaseName
-    Base name for all resources (default: sp-indexer).
-
-.PARAMETER ClientSecret
-    Optional Graph API client secret (for the Sites.Read.All / Files.Read.All app
-    registration fallback). When supplied, the deployment provisions a Key Vault,
-    stores the secret, and wires it into the Function App as a Key Vault reference.
-    Prefer the pure-managed-identity path (leave this empty) when possible.
-
-.PARAMETER ProvisionDocIntel
-    If $true, provisions a new Document Intelligence account for image OCR.
-
 .EXAMPLE
-    # Pure managed-identity deployment
-    .\deploy.ps1 -ResourceGroup sharepoint-testing
-
-.EXAMPLE
-    # With Key Vault-backed client secret
-    .\deploy.ps1 -ResourceGroup sharepoint-testing -ClientSecret (Read-Host -AsSecureString)
-
-.EXAMPLE
-    # With Document Intelligence for image OCR
-    .\deploy.ps1 -ResourceGroup sharepoint-testing -ProvisionDocIntel
+    .\deploy.ps1 -ResourceGroup sharepoint-rg
 #>
 
 param(
     [Parameter(Mandatory)]
     [string]$ResourceGroup,
 
-    [string]$Location = "swedencentral",
-    [string]$BaseName = "sp-indexer",
-
-    [securestring]$ClientSecret = $null,
-    [switch]$ProvisionDocIntel
+    [string]$Location = "swedencentral"
 )
 
 $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
 
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-$projectRoot = Split-Path -Parent $scriptDir
 
 Write-Host "`n=== SharePoint Connector — Deployment ===" -ForegroundColor Cyan
 
 # ------------------------------------------------------------------
-# Pre-flight: make sure a bicepparam file exists
+# Pre-flight: ensure bicepparam exists
 # ------------------------------------------------------------------
 $paramFile = Join-Path $scriptDir "main.bicepparam"
 $sampleFile = Join-Path $scriptDir "main.bicepparam.sample"
@@ -67,44 +48,29 @@ if (-not (Test-Path $paramFile)) {
         Write-Warning "main.bicepparam missing — copying from main.bicepparam.sample. Edit it with your values, then re-run."
         Copy-Item $sampleFile $paramFile
     }
-    Write-Error "Please populate $paramFile with your tenant/subscription/SharePoint values before deploying."
+    Write-Error "Populate $paramFile with tenantId, sharePointSiteUrl, apiAudience before deploying."
     exit 1
 }
 
+# Ensure the RG exists
+az group create --name $ResourceGroup --location $Location --output none
+
 # ------------------------------------------------------------------
-# Step 1: Deploy infrastructure via Bicep
+# Deploy infrastructure + seed function code
 # ------------------------------------------------------------------
-Write-Host "`n[1/4] Deploying infrastructure (Bicep)..." -ForegroundColor Yellow
+Write-Host "`nDeploying infrastructure + seeding function-app package..." -ForegroundColor Yellow
 
 $bicepFile = Join-Path $scriptDir "main.bicep"
-
-# Assemble extra parameters (only override what was passed on the command line)
-$extraParams = @(
-    "baseName=$BaseName",
-    "location=$Location"
-)
-
-if ($ClientSecret) {
-    $plain = [System.Runtime.InteropServices.Marshal]::PtrToStringAuto(
-        [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($ClientSecret)
-    )
-    $extraParams += "useClientSecret=true"
-    $extraParams += "clientSecretValue=$plain"
-}
-
-if ($ProvisionDocIntel) {
-    $extraParams += "provisionDocIntel=true"
-}
 
 az deployment group create `
     --resource-group $ResourceGroup `
     --template-file $bicepFile `
     --parameters $paramFile `
-    --parameters $extraParams `
+    --parameters location=$Location `
     --output table
 
 if ($LASTEXITCODE -ne 0) {
-    Write-Error "Bicep deployment failed"
+    Write-Error "Deployment failed"
     exit 1
 }
 
@@ -117,71 +83,56 @@ $outputs = az deployment group show `
 
 $functionAppName = $outputs.functionAppName.value
 $principalId = $outputs.functionAppPrincipalId.value
-$keyVaultName = $outputs.keyVaultName.value
+$searchEndpoint = $outputs.searchEndpoint.value
+$foundryEndpoint = $outputs.foundryEndpoint.value
 $docIntelEndpoint = $outputs.docIntelEndpoint.value
+$keyVaultName = $outputs.keyVaultName.value
 
-Write-Host "  Function App:     $functionAppName" -ForegroundColor Green
-Write-Host "  Managed Identity: $principalId" -ForegroundColor Green
-if ($keyVaultName) {
-    Write-Host "  Key Vault:        $keyVaultName" -ForegroundColor Green
-}
-if ($docIntelEndpoint) {
-    Write-Host "  DocIntel:         $docIntelEndpoint" -ForegroundColor Green
-}
-
-# ------------------------------------------------------------------
-# Step 2: Ensure requirements.txt is up to date
-# ------------------------------------------------------------------
-Write-Host "`n[2/4] Updating requirements.txt..." -ForegroundColor Yellow
-Push-Location $projectRoot
-uv export --no-hashes --extra func --no-dev 2>$null | Set-Content -Path requirements.txt -Encoding UTF8
-Pop-Location
-Write-Host "  requirements.txt updated" -ForegroundColor Green
+Write-Host "`n  Function App:     $functionAppName" -ForegroundColor Green
+Write-Host "  Managed Identity: $principalId"   -ForegroundColor Green
+Write-Host "  Search:           $searchEndpoint" -ForegroundColor Green
+Write-Host "  Foundry:          $foundryEndpoint" -ForegroundColor Green
+Write-Host "  DocIntel:         $docIntelEndpoint" -ForegroundColor Green
+Write-Host "  Key Vault:        $keyVaultName"   -ForegroundColor Green
 
 # ------------------------------------------------------------------
-# Step 3: Deploy function code
+# Post-deployment checklist
 # ------------------------------------------------------------------
-Write-Host "`n[3/4] Deploying function code..." -ForegroundColor Yellow
-Push-Location $projectRoot
-
-func azure functionapp publish $functionAppName --python
-
-if ($LASTEXITCODE -ne 0) {
-    Write-Error "Function deployment failed"
-    Pop-Location
-    exit 1
-}
-Pop-Location
-Write-Host "  Code deployed successfully" -ForegroundColor Green
-
-# ------------------------------------------------------------------
-# Step 4: Post-deployment info
-# ------------------------------------------------------------------
-Write-Host "`n[4/4] Post-deployment checklist" -ForegroundColor Yellow
 Write-Host @"
 
-  Deployment complete!
+  Deployment complete. Function code is already on the Function App.
 
-  Function App:       $functionAppName
-  Managed Identity:   $principalId
+  Remaining manual steps (Graph + Copilot Studio — these require roles that
+  Azure RG Owners typically don't hold, so they stay out-of-template on
+  purpose):
+  ════════════════════════════════════════════════════════════════
+  1. Grant Sites.Selected on your target SharePoint site:
 
-  IMPORTANT — Manual steps required:
-  ═══════════════════════════════════════════════════════════════
-  1. Graph API permissions for the managed identity:
-     The Function App's managed identity ($principalId) needs
-     Graph API access to your SharePoint site. Prefer the
-     least-privilege Sites.Selected model over tenant-wide
-     Sites.Read.All; see README section 'Authentication Deep Dive'.
+       .\infra\grant-site-permission.ps1 ``
+           -SiteUrl "<your-site-url>" ``
+           -FunctionAppName "$functionAppName"
 
-  2. Verify the timer is running:
-     az functionapp show --name $functionAppName --resource-group $ResourceGroup --query "state"
+     (Requires SharePoint Administrator or Global Administrator.)
 
-  3. Check logs:
-     func azure functionapp logstream $functionAppName
+  2. Grant ``GroupMember.Read.All`` (Application) Graph permission to the
+     managed identity ($principalId). Required so /api/search can resolve
+     transitive group memberships.
 
-  4. Trigger a one-off test:
-     \$masterKey = (az functionapp keys list --name $functionAppName --resource-group $ResourceGroup --query "masterKey" -o tsv)
-     Invoke-WebRequest -Uri "https://$functionAppName.azurewebsites.net/admin/functions/sp_indexer_timer" ``
-         -Method POST -Headers @{"x-functions-key"=\$masterKey; "Content-Type"="application/json"} -Body '{}'
-  ═══════════════════════════════════════════════════════════════
+     (Requires Global Administrator or Cloud Application Administrator.)
+
+  3. Import copilot-studio-topics/OnKnowledgeRequested.yaml into your
+     generative-orchestration Copilot Studio agent, fill the placeholders
+     (Function App hostname + OAuth2 connection reference), and publish.
+
+  4. Verify:
+       az functionapp show --name $functionAppName --resource-group $ResourceGroup --query "state"
+       func azure functionapp logstream $functionAppName
+  ════════════════════════════════════════════════════════════════
+
+  Tip — to redeploy new function code after a main-branch merge:
+    1. Wait for the 'Release SharePoint Connector' GitHub Action to
+       publish a new ``sharepoint-connector-latest`` release.
+    2. Restart the Function App (or run: az functionapp restart --name
+       $functionAppName --resource-group $ResourceGroup) — it re-pulls
+       the package from blob on next cold start.
 "@ -ForegroundColor White

@@ -67,82 +67,117 @@ A ~15 minute end-to-end walkthrough — architecture, deployment, post-deploymen
 
 ### Prerequisites and Costs
 
-| Requirement | Why | Cost signal |
-|---|---|---|
-| **Azure subscription** with Owner or User Access Administrator to the target RG | Needed to assign RBAC roles on Search, Foundry, Storage, Key Vault | — |
-| **Python 3.11+** | Azure Functions runtime + type hints | free |
-| **[uv](https://docs.astral.sh/uv/)** | Dependency + virtualenv management | free |
-| **[Azure CLI](https://learn.microsoft.com/cli/azure/install-azure-cli)** (`az`) | Bicep deployment + RBAC | free |
-| **[Azure Functions Core Tools v4](https://learn.microsoft.com/azure/azure-functions/functions-run-tools)** (`func`) | Code deployment + log streaming | free |
-| **Azure AI Search** (Basic tier or higher) | Free tier has no vector search | ~$75/mo for Basic (1 replica / 1 partition) |
-| **Microsoft Foundry / Azure AI Services** (multi-service resource) | Hosts Azure AI Vision multimodal embeddings (1024d) and optionally Document Intelligence Layout | Per-call; Vision S1 is ~$1.00 per 1000 transactions |
-| **Azure Storage** (Standard) | Function runtime, queues, tables, image crops, backups | cents/GB/month |
-| **Microsoft Entra ID tenant** | Graph API auth for SharePoint | included |
-| **SharePoint Online site** | Source of truth | included |
+You only need **two things you must create yourself** before deploying — everything else is provisioned by the Bicep template.
 
-**Rough ongoing cost for a small tenant** (≈2 000 documents, hourly incremental): Search Basic ~$75/mo + Functions Flex Consumption a few dollars + Foundry per-call a few dollars + Storage pennies = **≈$85–$100/mo**. Initial bulk ingest of ~20 000 documents pushes the Foundry bill into the tens of dollars for that one run.
+| You supply | Why it can't be auto-provisioned |
+|---|---|
+| A **SharePoint Online site** with the content you want indexed | It's your content; nobody else can create it. |
+| An **Entra app registration** for the `/api/search` endpoint — expose an API with an `access_as_user` delegated scope | Copilot Studio's custom OAuth2 connection reference points at this app registration, and the client ID becomes the `apiAudience` parameter. |
+
+…plus a workstation with:
+
+| Tool | Why | Cost |
+|---|---|---|
+| **Azure subscription** with Owner or User Access Administrator on the target RG | Template assigns RBAC on seven resources | — |
+| **Python 3.11+** + **[uv](https://docs.astral.sh/uv/)** | Publish the function code | free |
+| **[Azure CLI](https://learn.microsoft.com/cli/azure/install-azure-cli)** (`az`) | Bicep deployment | free |
+| **[Azure Functions Core Tools v4](https://learn.microsoft.com/azure/azure-functions/functions-run-tools)** (`func`) | Code publish + log streaming | free |
+
+**The template creates all Azure resources** — Storage Account (with queue / table / blob containers), Log Analytics + App Insights, **Azure AI Search (Basic)**, **Microsoft Foundry / Azure AI Services** (hosts Azure AI Vision multimodal), **Document Intelligence** (Layout), **Key Vault**, Flex Consumption plan, and the Function App. No "pre-existing resource" steps, no searchResourceId / foundryResourceId to paste in.
+
+**Monthly cost signal** (idle, ≈2 000 documents, hourly incremental):
+
+| Resource | Cost signal |
+|---|---|
+| Azure AI Search (Basic, 1 replica / 1 partition) | ~$75/mo fixed |
+| Function App (Flex Consumption FC1) | a few dollars/mo — scales to zero |
+| Foundry (Azure AI Vision multimodal, S0) | per-call; a few dollars/mo at this volume |
+| Document Intelligence (S0) | per-page; a few dollars/mo at this volume |
+| Storage + Log Analytics + Key Vault | pennies/mo each |
+
+Expect **≈$85–$100/mo** at rest. An initial bulk ingest of ~20 000 documents pushes the Foundry + DocIntel bills into tens of dollars **for that one run**.
 
 ### Deployment Options
+
+The template only asks for **five values** — everything else is provisioned and defaulted automatically.
+
+| Parameter | What it is |
+|---|---|
+| `baseName` | Resource-name prefix (3–16 chars). A uniqueness hash is appended for globally-unique resources. |
+| `location` | Azure region (default `resourceGroup().location`). Pick one that supports Azure AI Vision multimodal 4.0. |
+| `tenantId` | Microsoft Entra tenant ID. |
+| `sharePointSiteUrl` | Full URL of the SharePoint site to monitor. |
+| `apiAudience` | Application (client) ID of the Entra app registration that represents `/api/search`. Copilot Studio requests tokens for this audience. |
 
 #### Automated Deployment
 
 [![Deploy to Azure](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2FAzure%2FCopilot-Studio-and-Azure%2Fmain%2Faccelerators%2Fsharepoint-connector%2Fdeploy%2Fazuredeploy.json)
 
-The ARM template provisions the Function App, Storage (with queue / table / state / images / backup containers), App Insights, optional Key Vault (if `useClientSecret=true`), optional Document Intelligence (if `provisionDocIntel=true`), and all RBAC role assignments on the Function's managed identity.
+Clicking the button opens the Azure portal's custom-deployment form pre-populated with the five parameters above. The template provisions **everything** — Storage Account (+ queue / table / containers), Log Analytics + App Insights, Azure AI Search (Basic), Microsoft Foundry / Azure AI Services multi-service (hosts Vision multimodal), Document Intelligence (Layout), Key Vault, Flex Consumption plan + Function App, and every RBAC assignment on the Function's managed identity. It also **pulls the latest CI-built function-app package** from GitHub Releases (`sharepoint-connector-latest`) via an ARM `deploymentScript` and writes it to the Function App's storage container — so the code is already running when the deployment finishes. No `func publish` step.
 
-After the ARM deployment succeeds:
+After the ARM deployment succeeds, three manual steps remain — each requires Entra / SharePoint / Power Platform roles that Azure RG Owners typically don't hold, which is why they stay out of the one-click flow:
 
-1. **Deploy the function code:**
-   ```powershell
-   uv sync
-   func azure functionapp publish <function-app-name> --python
-   ```
-2. **Grant Sites.Selected on the target site** (least privilege — *strongly recommended*):
+1. **Grant Sites.Selected on the target site** (least privilege — *strongly recommended*). Requires SharePoint Administrator or Global Administrator:
    ```powershell
    .\infra\grant-site-permission.ps1 `
        -SiteUrl "https://contoso.sharepoint.com/sites/YourSite" `
        -FunctionAppName "<function-app-name>"
    ```
-3. **Grant `GroupMember.Read.All` (Application)** to the managed identity if you want `/api/search` to resolve group memberships transitively.
-4. **Wait 2–10 minutes for RBAC propagation**, then either let the timer fire or trigger manually.
+2. **Grant `GroupMember.Read.All` (Application)** Graph permission to the managed identity so `/api/search` can resolve transitive group memberships. Requires Global Administrator or Cloud Application Administrator.
+3. **Import the Copilot Studio topic** [`copilot-studio-topics/OnKnowledgeRequested.yaml`](copilot-studio-topics/OnKnowledgeRequested.yaml) into your generative-orchestration agent, fill in the two placeholders (Function App hostname + OAuth2 connection reference), and publish. Requires the Copilot Studio environment maker role.
+
+Then wait 2–10 minutes for RBAC propagation and let the timer fire — or trigger manually.
 
 #### Manual Deployment
 
 Preferred when you need to review or customise each step.
 
-1. **Clone + install dependencies:**
+1. **Clone the repo** (no local Python setup needed — the function code is pulled from a GitHub Release at deploy time):
    ```bash
    git clone <repo-url>
-   cd sharepoint-connector
-   uv sync
+   cd accelerators/sharepoint-connector
    ```
-
-2. **Create Azure resources (if they don't already exist):**
-   ```bash
-   az group create --name my-rg --location swedencentral
-   az search service create --name my-search --resource-group my-rg --sku basic --location swedencentral
-   az cognitiveservices account create --name my-foundry --resource-group my-rg \
-       --kind AIServices --sku S0 --location swedencentral --custom-domain my-foundry
+2. **Copy the sample parameter file**, then fill in the five required values:
+   ```powershell
+   Copy-Item infra/main.bicepparam.sample infra/main.bicepparam
+   # Edit infra/main.bicepparam with your baseName, tenantId,
+   # sharePointSiteUrl, and apiAudience.
    ```
-   (Document Intelligence is optional — if you want it, provision via the Bicep `provisionDocIntel=true` flag or as a separate resource.)
-
-3. **Copy `infra/main.bicepparam.sample` → `infra/main.bicepparam`** and fill in tenant ID, SharePoint site URL, Search + Foundry endpoints / resource IDs, and any scoping knobs (`sharePointRootPaths`, `vectoriseConcurrency`, `multimodalMaxInFlight`, `backupSchedule`).
-
-4. **Deploy infrastructure + code** with the convenience script:
+3. **Run the deploy script** — creates the RG if needed, runs the Bicep, and seeds the function-app package from `sharepoint-connector-latest` automatically:
    ```powershell
    .\infra\deploy.ps1 -ResourceGroup my-rg
    ```
-   Pass `-ClientSecret (Read-Host -AsSecureString)` if you want the Graph client-secret path (Key Vault gets provisioned automatically); pass `-ProvisionDocIntel` to create a new Document Intelligence account.
+4. **Grant Sites.Selected** on your target site (see Automated Deployment step 1).
+5. **Grant `GroupMember.Read.All` (Application)** on Graph to the managed identity (see Automated Deployment step 2).
+6. **Import the Copilot Studio topic** (see Automated Deployment step 3).
 
-5. **Grant Sites.Selected** with `infra/grant-site-permission.ps1` (see Automated Deployment above).
+**Fork / custom-code users** — the template pulls from `github.com/Azure/Copilot-Studio-and-Azure/releases/download/sharepoint-connector-latest/sharepoint-connector.zip` by default. If you're deploying from a fork with code changes, either:
 
-6. **Grant Graph app permissions** needed by the managed identity. For search:
-   ```
-   GroupMember.Read.All   (Application)
-   ```
-   For SharePoint (when using Sites.Selected, no tenant-wide permissions needed — just the per-site grant from step 5).
+- Let the `Release SharePoint Connector` GitHub Actions workflow in your fork run (it republishes the `sharepoint-connector-latest` tag in your fork, and you point `packageReleaseUrl` at your fork), OR
+- Publish the zip to any public URL and pass `packageReleaseUrl=<your-url>` as a Bicep parameter override.
 
-7. **Import the Copilot Studio topic** [`copilot-studio-topics/OnKnowledgeRequested.yaml`](copilot-studio-topics/OnKnowledgeRequested.yaml) into your generative-orchestration agent. Fill in the two placeholders (Function App hostname + OAuth2 connection reference name) and publish.
+**Pushing new code after the initial deploy** — merge to `main`, wait for the `Release SharePoint Connector` Action to republish `sharepoint-connector-latest`, then restart the Function App so it re-pulls from blob:
+
+```powershell
+az functionapp restart --name <function-app-name> --resource-group <rg>
+```
+
+(Or configure an Event-Grid-triggered redeploy — out of scope for the accelerator.)
+
+#### Post-deployment tuning (no redeploy needed)
+
+Every operational knob lives as an **app setting** on the Function App — change one via `az functionapp config appsettings set` and the next dispatcher / worker run picks it up. Common adjustments:
+
+| Setting | Default | When to change |
+|---|---|---|
+| `SHAREPOINT_LIBRARIES` | *(all)* | Restrict to specific document-library display names. |
+| `SHAREPOINT_ROOT_PATHS` | *(whole library)* | Restrict to folders inside a library. |
+| `PROCESSING_MODE` | `since-last-run` | `full` for cleanup; `since-date` + `START_DATE` for historical backfills. |
+| `VECTORISE_CONCURRENCY` / `MULTIMODAL_MAX_IN_FLIGHT` | `8` / `8` | Raise for faster initial bulk loads (subject to Vision TPS). |
+| `BACKUP_SCHEDULE` / `BACKUP_RETENTION_DAYS` | `0 0 3 * * *` / `7` | Adjust nightly backup cadence + retention. |
+| `FORCE_RECREATE_INDEX` | `false` | Set `true` **once** after a breaking index-schema change, then flip back. |
+
+See the **[Customization Guide](#customization-guide)** for the complete list + recipes.
 
 ---
 

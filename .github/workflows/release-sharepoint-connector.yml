@@ -1,0 +1,104 @@
+# Builds the SharePoint Connector function-app package and publishes it to a
+# moving-tag GitHub Release (`sharepoint-connector-latest`). The accelerator's
+# Bicep template downloads the latest zip from that release during deployment,
+# so the end-to-end `Deploy to Azure` experience has no post-deploy `func
+# publish` step.
+#
+# Triggers:
+#   * Any push to main that touches the accelerator (code, requirements, or
+#     pyproject — explicitly skips doc-only changes so we don't thrash
+#     releases on README edits).
+#   * Manual dispatch from the Actions tab.
+#
+# Fork users: change the `RELEASE_URL` variable in infra/main.bicep to point
+# at your own fork's release, or override the deploymentScript's PACKAGE_URL
+# environment variable post-deploy.
+
+name: Release SharePoint Connector
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'accelerators/sharepoint-connector/**.py'
+      - 'accelerators/sharepoint-connector/pyproject.toml'
+      - 'accelerators/sharepoint-connector/uv.lock'
+      - 'accelerators/sharepoint-connector/host.json'
+      - 'accelerators/sharepoint-connector/.funcignore'
+      - '.github/workflows/release-sharepoint-connector.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write   # needed to create releases / move tags
+
+concurrency:
+  group: release-sharepoint-connector
+  cancel-in-progress: true
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: accelerators/sharepoint-connector
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install uv
+        run: pip install uv
+
+      - name: Generate requirements.txt (runtime deps only)
+        run: |
+          uv sync --extra func
+          uv export --no-hashes --extra func --no-dev > requirements.txt
+          echo "--- requirements.txt ---"
+          cat requirements.txt
+
+      - name: Build deployment zip
+        run: |
+          # Exclude everything the function runtime doesn't need. Keeps the
+          # package small (~1 MB vs ~50 MB if we ship the venv).
+          zip -r /tmp/sharepoint-connector.zip . \
+            -x "tests/*" \
+            -x "**/__pycache__/*" \
+            -x "**/*.pyc" \
+            -x ".venv/*" \
+            -x "venv/*" \
+            -x "images/*" \
+            -x "deploy/*" \
+            -x "infra/*" \
+            -x "copilot-studio-topics/*" \
+            -x "docs/*" \
+            -x "*.drawio" \
+            -x "*.md" \
+            -x ".gitignore" \
+            -x "uv.lock" \
+            -x ".env*"
+          ls -lh /tmp/sharepoint-connector.zip
+          unzip -l /tmp/sharepoint-connector.zip | tail -20
+
+      - name: Replace moving-tag release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG=sharepoint-connector-latest
+
+          # Delete the previous release + tag if they exist. Ignored on first run.
+          gh release delete "$TAG" --yes --cleanup-tag || true
+
+          # Create a fresh release tagged at the current commit. `--latest=false`
+          # keeps the repo's overall "latest release" pointer unchanged so
+          # releases for other accelerators in the same repo aren't affected.
+          gh release create "$TAG" \
+            --title "SharePoint Connector — latest build" \
+            --notes "Automated build of main (commit $GITHUB_SHA). Consumed by the accelerator's Deploy-to-Azure template via ARM deploymentScript." \
+            --latest=false \
+            /tmp/sharepoint-connector.zip
+        working-directory: ${{ github.workspace }}
