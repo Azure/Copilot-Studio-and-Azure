@@ -5,6 +5,9 @@ Copilot Studio is a native tool that can be extended with various Azure AI capab
 On this case importing the [Content Understanding Flow] we were able to connect Copilot Studio with Content Understanding in a more efficient way, enabling advanced search capabilities and improving the overall user experience.
 
 ***
+### Video Walkthrough
+
+[Video Walkthrough](https://www.youtube.com/watch?v=4iQ7fo1OVMY)
 
 # 1) Prerequisites & What you’ll import
 
