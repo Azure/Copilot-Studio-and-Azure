@@ -42,10 +42,13 @@ param location string = resourceGroup().location
 @description('Full SharePoint site URL the connector will monitor, e.g. https://contoso.sharepoint.com/sites/YourSite')
 param sharePointSiteUrl string
 
-@description('Optional escape hatch. When empty (the default), the template creates the Entra app registration for /api/search itself via the Microsoft Graph Bicep extension — the deployer needs the `Application Administrator` Entra role for that. When non-empty, the template skips creating the app and uses this client ID instead — useful when the deployer does NOT have Graph privileges and an admin has pre-created the app registration via infra/create-api-app-registration.ps1. Accepts a bare GUID or an `api://<clientId>` URI.')
+@description('Per-user security trimming. Default false: Copilot Studio queries Azure AI Search directly as a Knowledge Source — simplest deployment, no Entra app registration, no Power Platform connection. Set true to also create the /api/search Entra app registration that the OnKnowledgeRequested topic uses to enforce SharePoint ACLs at query time. Requires `Application Administrator` Entra role unless `apiAudience` is supplied. See the README section "Extending with Per-User Security Trimming" for the full opt-in walkthrough.')
+param enableSecurityTrimming bool = false
+
+@description('Optional escape hatch — only relevant when enableSecurityTrimming = true. When empty, the template creates the Entra app registration itself via the Microsoft Graph Bicep extension (deployer needs `Application Administrator`). When non-empty, the template skips creating the app and uses this client ID instead — useful when the deployer lacks Graph privileges and an admin has pre-created the app via infra/create-api-app-registration.ps1. Accepts a bare GUID or an `api://<clientId>` URI.')
 param apiAudience string = ''
 
-var shouldCreateAppRegistration = empty(apiAudience)
+var shouldCreateAppRegistration = enableSecurityTrimming && empty(apiAudience)
 
 // ============================================================================
 // Operational defaults — baked in; override post-deployment via app settings
@@ -79,7 +82,6 @@ var multimodalModelVersion = '2023-04-15'
 
 var imagesContainerName = 'images'
 var extractImages = true
-var forceRecreateIndex = false
 var alwaysAllowedIds = ''
 
 var searchSku = 'basic'                        // vector search requires Basic+
@@ -354,7 +356,8 @@ resource apiApp 'Microsoft.Graph/applications@v1.0' = if (shouldCreateAppRegistr
 
 // Normalise `api://<clientId>` → `<clientId>` so either form works for apiAudience.
 var suppliedClientId = startsWith(apiAudience, 'api://') ? substring(apiAudience, 6) : apiAudience
-var effectiveApiClientId = shouldCreateAppRegistration ? apiApp!.appId : suppliedClientId
+// Resolves to '' when security trimming is disabled — /api/search treats that as "auth disabled / endpoint unused".
+var effectiveApiClientId = enableSecurityTrimming ? (shouldCreateAppRegistration ? apiApp!.appId : suppliedClientId) : ''
 
 // ============================================================================
 // One-shot code seeding — user-assigned MI + deploymentScript that downloads
@@ -375,6 +378,68 @@ resource deployerStorageRole 'Microsoft.Authorization/roleAssignments@2022-04-01
     principalId: deployerIdentity.properties.principalId
     principalType: 'ServicePrincipal'
   }
+}
+
+resource deployerSearchRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(searchService.id, searchServiceContributorRoleId, deployerIdentity.id)
+  scope: searchService
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', searchServiceContributorRoleId)
+    principalId: deployerIdentity.properties.principalId
+    principalType: 'ServicePrincipal'
+  }
+}
+
+// Index schema lives in infra/sharepoint-index.json — single source of truth
+// for the index. Two placeholders (__MULTIMODAL_ENDPOINT__ and
+// __MULTIMODAL_MODEL_VERSION__) are substituted by the createSearchIndex
+// deploymentScript at deploy time.
+var indexSchema = loadTextContent('sharepoint-index.json')
+
+resource createSearchIndex 'Microsoft.Resources/deploymentScripts@2023-08-01' = {
+  name: '${baseName}-create-index'
+  location: location
+  kind: 'AzureCLI'
+  identity: {
+    type: 'UserAssigned'
+    userAssignedIdentities: {
+      '${deployerIdentity.id}': {}
+    }
+  }
+  properties: {
+    azCliVersion: '2.65.0'
+    timeout: 'PT10M'
+    retentionInterval: 'PT1H'
+    cleanupPreference: 'OnSuccess'
+    environmentVariables: [
+      { name: 'SEARCH_ENDPOINT', value: searchEndpoint }
+      { name: 'INDEX_NAME', value: searchIndexName }
+      { name: 'INDEX_SCHEMA', value: indexSchema }
+      { name: 'MULTIMODAL_ENDPOINT', value: foundryEndpoint }
+      { name: 'MULTIMODAL_MODEL_VERSION', value: multimodalModelVersion }
+    ]
+    scriptContent: '''
+      set -eu
+      printf '%s' "$INDEX_SCHEMA" \
+        | sed "s|__MULTIMODAL_ENDPOINT__|$MULTIMODAL_ENDPOINT|g" \
+        | sed "s|__MULTIMODAL_MODEL_VERSION__|$MULTIMODAL_MODEL_VERSION|g" \
+        > /tmp/index.json
+      TOKEN=$(az account get-access-token --resource https://search.azure.com/ --query accessToken -o tsv)
+      HTTP=$(curl -sS -o /tmp/resp.json -w "%{http_code}" -X PUT \
+             "$SEARCH_ENDPOINT/indexes/$INDEX_NAME?api-version=2024-09-01-preview" \
+             -H "Authorization: Bearer $TOKEN" \
+             -H "Content-Type: application/json" \
+             --data @/tmp/index.json)
+      echo "PUT /indexes/$INDEX_NAME returned $HTTP"
+      cat /tmp/resp.json
+      if [ "$HTTP" != "200" ] && [ "$HTTP" != "201" ] && [ "$HTTP" != "204" ]; then
+        exit 1
+      fi
+    '''
+  }
+  dependsOn: [
+    deployerSearchRole
+  ]
 }
 
 resource publishCode 'Microsoft.Resources/deploymentScripts@2023-08-01' = {
@@ -510,9 +575,6 @@ resource functionApp 'Microsoft.Web/sites@2024-04-01' = {
         { name: 'IMAGES_CONTAINER', value: imagesContainerName }
         { name: 'EXTRACT_IMAGES', value: extractImages ? 'true' : 'false' }
 
-        // Destructive index-recreate flag (unset after one run)
-        { name: 'FORCE_RECREATE_INDEX', value: forceRecreateIndex ? 'true' : 'false' }
-
         // Query-time security trimming (/api/search, called from OnKnowledgeRequested topic)
         { name: 'API_AUDIENCE', value: effectiveApiClientId }
         { name: 'ALWAYS_ALLOWED_IDS', value: alwaysAllowedIds }
@@ -635,5 +697,6 @@ output searchEndpoint string = searchEndpoint
 output foundryEndpoint string = foundryEndpoint
 output docIntelEndpoint string = docIntelEndpoint
 output keyVaultName string = keyVault.name
+output securityTrimmingEnabled bool = enableSecurityTrimming
 output apiAudience string = effectiveApiClientId
-output apiAppDisplayName string = shouldCreateAppRegistration ? apiApp!.displayName : 'pre-created (apiAudience parameter supplied)'
+output apiAppDisplayName string = shouldCreateAppRegistration ? apiApp!.displayName : (enableSecurityTrimming ? 'pre-created (apiAudience parameter supplied)' : 'security trimming disabled — no app registration')

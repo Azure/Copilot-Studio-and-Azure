@@ -1,0 +1,265 @@
+<mxfile host="app.diagrams.net" modified="2026-04-22T00:00:00.000Z" agent="Claude Code" version="24.0.0" type="device">
+  <diagram id="sp-connector-arch-trimmed" name="SharePoint Connector Architecture — with Per-User Security Trimming">
+    <mxGraphModel dx="1600" dy="1000" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1800" pageHeight="1100" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <!-- Title -->
+        <mxCell id="title" value="SharePoint → Azure AI Search — with Per-User Security Trimming (extended)" style="text;html=1;fontSize=22;fontStyle=1;align=center;verticalAlign=middle;whiteSpace=wrap;fillColor=none;strokeColor=none;fontColor=#333333;" vertex="1" parent="1">
+          <mxGeometry x="400" y="15" width="900" height="40" as="geometry" />
+        </mxCell>
+
+        <!-- Swim lane: Ingestion Flow -->
+        <mxCell id="lane1" value="Ingestion Pipeline  (timer dispatcher → queue → parallel workers)" style="text;html=1;fontSize=13;fontStyle=3;align=left;verticalAlign=middle;fillColor=#E6F0FF;strokeColor=#0078D4;rounded=1;arcSize=20;fontColor=#0078D4;spacingLeft=10;" vertex="1" parent="1">
+          <mxGeometry x="60" y="70" width="1680" height="30" as="geometry" />
+        </mxCell>
+
+        <!-- Swim lane: Retrieval Flow -->
+        <mxCell id="lane2" value="Retrieval Flow  (Copilot Studio queries the search index)" style="text;html=1;fontSize=13;fontStyle=3;align=left;verticalAlign=middle;fillColor=#F3E6F3;strokeColor=#742774;rounded=1;arcSize=20;fontColor=#742774;spacingLeft=10;" vertex="1" parent="1">
+          <mxGeometry x="60" y="820" width="1680" height="30" as="geometry" />
+        </mxCell>
+
+        <!-- Graph API (top — closer to dispatcher) -->
+        <mxCell id="graphapi" value="Microsoft Graph API&#xa;&#xa;Sites.Read.All&#xa;Files.Read.All" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#0078D4;fontColor=#FFFFFF;strokeColor=none;fontSize=11;fontStyle=1;arcSize=10;verticalAlign=middle;align=center;" vertex="1" parent="1">
+          <mxGeometry x="80" y="155" width="190" height="80" as="geometry" />
+        </mxCell>
+
+        <!-- SharePoint Online (bottom — worker streams from here) -->
+        <mxCell id="sharepoint" value="SharePoint Online&#xa;&#xa;Document Libraries&#xa;(PDF, Office, text, images)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#217346;fontColor=#FFFFFF;strokeColor=none;fontSize=11;fontStyle=1;arcSize=10;verticalAlign=middle;align=center;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="80" y="324" width="190" height="110" as="geometry" />
+        </mxCell>
+
+        <!-- Dispatcher (timer trigger) -->
+        <mxCell id="dispatcher" value="Azure Function — Dispatcher&#xa;(Timer Trigger)&#xa;&#xa;1. Resolve processing mode&#xa;   (full / since-date / watermark)&#xa;2. List changed files via Graph&#xa;3. Enqueue one message per file&#xa;4. Advance watermark" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#0078D4;fontColor=#FFFFFF;strokeColor=#005A9E;strokeWidth=3;fontSize=11;fontStyle=1;arcSize=10;verticalAlign=middle;align=center;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="340" y="130" width="260" height="180" as="geometry" />
+        </mxCell>
+
+        <!-- Queue -->
+        <mxCell id="queue" value="Storage Queue&#xa;&#xa;sp-indexer-q&#xa;+ sp-indexer-q-poison&#xa;&#xa;(1 message per file)" style="shape=mxgraph.azure.queue;fillColor=#0078D4;fontColor=#FFFFFF;strokeColor=none;fontSize=11;fontStyle=1;verticalLabelPosition=bottom;verticalAlign=top;align=center;" vertex="1" parent="1">
+          <mxGeometry x="680" y="160" width="100" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="queue_label" value="Storage Queue&#xa;sp-indexer-q&#xa;+ poison queue" style="text;html=1;fontSize=11;fontStyle=1;align=center;verticalAlign=middle;fillColor=none;strokeColor=none;fontColor=#0078D4;" vertex="1" parent="1">
+          <mxGeometry x="650" y="260" width="160" height="40" as="geometry" />
+        </mxCell>
+
+        <!-- Worker (queue trigger) -->
+        <mxCell id="worker" value="Azure Function — Worker&#xa;(Queue Trigger, up to 40 instances)&#xa;&#xa;1. Stream download → /tmp&#xa;2. Path-based extractors&#xa;   (PDF, DOCX, XLSX, PPTX)&#xa;3. Image OCR via Doc Intelligence&#xa;4. Block-boundary chunking&#xa;5. Embed → push to AI Search&#xa;6. On failure → failedFiles table,&#xa;   5× dequeue → poison queue" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#0078D4;fontColor=#FFFFFF;strokeColor=#005A9E;strokeWidth=3;fontSize=11;fontStyle=1;arcSize=10;verticalAlign=middle;align=center;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="860" y="130" width="300" height="220" as="geometry" />
+        </mxCell>
+
+        <!-- Azure AI Vision multimodal (Florence, 1024d) — single embedder -->
+        <mxCell id="openai" value="Azure AI Vision — Multimodal&#xa;Embeddings (Florence, 1024d)&#xa;&#xa;vectorizeText + vectorizeImage&#xa;share the same vector space.&#xa;&#xa;One hybrid query retrieves&#xa;both text and image chunks." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FF8C00;fontColor=#FFFFFF;strokeColor=none;fontSize=11;fontStyle=1;arcSize=10;verticalAlign=middle;align=center;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="1270" y="130" width="200" height="140" as="geometry" />
+        </mxCell>
+
+        <!-- Document Intelligence (optional, Layout only) -->
+        <mxCell id="docintel" value="Document Intelligence&#xa;(prebuilt-layout) — optional&#xa;&#xa;Reading-order paragraphs,&#xa;tables, figures with bounding&#xa;boxes for PDF/DOCX/PPTX/XLSX.&#xa;Not needed for standalone&#xa;image files." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#005A9E;fontColor=#FFFFFF;strokeColor=none;fontSize=10;fontStyle=1;arcSize=10;verticalAlign=middle;align=center;shadow=1;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="1270" y="290" width="200" height="140" as="geometry" />
+        </mxCell>
+
+        <!-- AI Search -->
+        <mxCell id="aisearch" value="Azure AI Search&#xa;&#xa;sharepoint-index&#xa;(HNSW + Semantic Ranker)&#xa;&#xa;Single vector field:&#xa;content_embedding (1024d)&#xa;&#xa;Registered AI-Services-Vision&#xa;vectorizer — Copilot Studio&#xa;can query without client-side&#xa;embedding code." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#0063B1;fontColor=#FFFFFF;strokeColor=none;fontSize=11;fontStyle=1;arcSize=10;verticalAlign=middle;align=center;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="995" y="413" width="250" height="200" as="geometry" />
+        </mxCell>
+
+        <!-- ========== State & Secrets ========== -->
+        <mxCell id="state_box" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF9E6;strokeColor=#D4A017;strokeWidth=1;dashed=1;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="268" y="457" width="430" height="240" as="geometry" />
+        </mxCell>
+        <mxCell id="state_title" value="Storage-backed State (Managed Identity, no keys)" style="text;html=1;fontSize=12;fontStyle=3;align=center;verticalAlign=middle;fillColor=none;strokeColor=none;fontColor=#D4A017;" vertex="1" parent="1">
+          <mxGeometry x="211" y="427" width="560" height="25" as="geometry" />
+        </mxCell>
+
+        <mxCell id="state_blob" value="Blob: state container&#xa;&#xa;(reserved for future&#xa;large-state dumps)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#CCE0FF;fontColor=#003366;strokeColor=#0078D4;fontSize=10;fontStyle=0;arcSize=15;verticalAlign=middle;align=center;" vertex="1" parent="1">
+          <mxGeometry x="288" y="497" width="170" height="80" as="geometry" />
+        </mxCell>
+
+        <mxCell id="state_watermark" value="Table: watermark&#xa;&#xa;last successful run&#xa;(per drive)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#CCE0FF;fontColor=#003366;strokeColor=#0078D4;fontSize=10;fontStyle=0;arcSize=15;verticalAlign=middle;align=center;" vertex="1" parent="1">
+          <mxGeometry x="478" y="497" width="170" height="80" as="geometry" />
+        </mxCell>
+
+        <mxCell id="state_failed" value="Table: failedFiles&#xa;&#xa;per-file retry count&#xa;+ terminal flag" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFE0B2;fontColor=#663300;strokeColor=#FF8C00;fontSize=10;fontStyle=0;arcSize=15;verticalAlign=middle;align=center;" vertex="1" parent="1">
+          <mxGeometry x="473" y="592" width="170" height="80" as="geometry" />
+        </mxCell>
+
+        <mxCell id="state_runstate" value="Table: runState&#xa;&#xa;per-run expected / completed /&#xa;failed counters" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#CCE0FF;fontColor=#003366;strokeColor=#0078D4;fontSize=10;fontStyle=0;arcSize=15;verticalAlign=middle;align=center;" vertex="1" parent="1">
+          <mxGeometry x="288" y="592" width="170" height="80" as="geometry" />
+        </mxCell>
+
+        <mxCell id="keyvault" value="Key Vault (conditional)&#xa;&#xa;graph-client-secret&#xa;&#xa;@Microsoft.KeyVault ref&#xa;(MI has Secrets User role)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E81123;fontColor=#FFFFFF;strokeColor=none;fontSize=10;fontStyle=1;arcSize=10;verticalAlign=middle;align=center;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="780" y="527" width="170" height="100" as="geometry" />
+        </mxCell>
+
+        <mxCell id="appinsights" value="App Insights&#xa;+ Log Analytics&#xa;&#xa;(Monitoring &amp; Logs)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#68217A;fontColor=#FFFFFF;strokeColor=none;fontSize=10;fontStyle=1;arcSize=10;verticalAlign=middle;align=center;" vertex="1" parent="1">
+          <mxGeometry x="643" y="310" width="170" height="50" as="geometry" />
+        </mxCell>
+
+        <!-- RBAC annotation -->
+        <mxCell id="rbac_box" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F0FFF0;strokeColor=#217346;strokeWidth=1;dashed=1;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="1270" y="400" width="470" height="260" as="geometry" />
+        </mxCell>
+        <mxCell id="rbac_title" value="RBAC Role Assignments (System-Assigned Managed Identity → Services)" style="text;html=1;fontSize=11;fontStyle=3;align=center;verticalAlign=middle;fillColor=none;strokeColor=none;fontColor=#217346;" vertex="1" parent="1">
+          <mxGeometry x="1280" y="405" width="450" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="rbac_text" value="🔍  Azure AI Search&#xa;     • Search Index Data Contributor&#xa;     • Search Service Contributor&#xa;&#xa;🧠  Foundry / Azure AI Services&#xa;     • Cognitive Services User&#xa;     (multimodal embeddings + optional&#xa;      Document Intelligence)&#xa;&#xa;📦  Azure Storage (Blob / Queue / Table)&#xa;     • Blob Data Owner&#xa;     • Queue Data Contributor&#xa;     • Table Data Contributor&#xa;&#xa;🔐  Key Vault (when useClientSecret = true)&#xa;     • Key Vault Secrets User&#xa;&#xa;📧  Microsoft Graph — indexing&#xa;     • Sites.Read.All / Files.Read.All&#xa;       (or Sites.Selected for least privilege)&#xa;&#xa;📧  Microsoft Graph — /api/search&#xa;     • GroupMember.Read.All (application)" style="text;html=1;fontSize=10;fontStyle=0;align=left;verticalAlign=top;fillColor=none;strokeColor=none;fontColor=#333333;spacingLeft=8;spacingTop=3;" vertex="1" parent="1">
+          <mxGeometry x="1280" y="435" width="450" height="220" as="geometry" />
+        </mxCell>
+
+        <!-- ========== Retrieval ========== -->
+        <mxCell id="copilot" value="Microsoft Copilot Studio&#xa;(Generative Orchestration)&#xa;&#xa;OnKnowledgeRequested topic&#xa;→ HTTP action&#xa;(flows user's delegated token)&#xa;&#xa;LLM sees ONLY chunks the&#xa;caller is authorised for." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#742774;fontColor=#FFFFFF;strokeColor=none;fontSize=11;fontStyle=1;arcSize=10;verticalAlign=middle;align=center;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="660" y="880" width="320" height="160" as="geometry" />
+        </mxCell>
+
+        <!-- Query API (HTTP trigger of the same Function App) -->
+        <mxCell id="queryapi" value="Azure Function — Query API&#xa;(HTTP Trigger /api/search)&#xa;&#xa;1. Validate Entra JWT&#xa;2. Resolve user OID + groups (Graph)&#xa;3. Build permission_ids filter&#xa;4. Hybrid query AI Search&#xa;5. Return trimmed citations" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#0078D4;fontColor=#FFFFFF;strokeColor=#005A9E;strokeWidth=3;fontSize=11;fontStyle=1;arcSize=10;verticalAlign=middle;align=center;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="950" y="700" width="320" height="150" as="geometry" />
+        </mxCell>
+
+        <mxCell id="enduser" value="End User" style="shape=mxgraph.azure.user;fillColor=#742774;fontColor=#FFFFFF;strokeColor=none;fontSize=12;fontStyle=1;verticalLabelPosition=bottom;verticalAlign=top;align=center;" vertex="1" parent="1">
+          <mxGeometry x="340" y="940" width="50" height="50" as="geometry" />
+        </mxCell>
+
+        <!-- ========== Arrows (ingestion) ========== -->
+        <!-- Dispatcher → Graph -->
+        <mxCell id="e_disp_graph" style="edgeStyle=orthogonalEdgeStyle;rounded=1;exitX=0;exitY=0.5;entryX=1;entryY=0.5;strokeColor=#0078D4;strokeWidth=2;" edge="1" source="dispatcher" target="graphapi" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_disp_graph_lbl" value="List changes&#xa;(since watermark)" style="edgeLabel;html=1;align=center;verticalAlign=bottom;fontSize=10;fontColor=#0078D4;fontStyle=1;" vertex="1" connectable="0" parent="e_disp_graph">
+          <mxGeometry x="-0.1" relative="1" as="geometry"><mxPoint y="-10" as="offset" /></mxGeometry>
+        </mxCell>
+
+        <!-- Graph → SharePoint -->
+        <mxCell id="e_graph_sp" style="edgeStyle=orthogonalEdgeStyle;rounded=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;strokeColor=#217346;strokeWidth=2;" edge="1" source="graphapi" target="sharepoint" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Dispatcher → Queue -->
+        <mxCell id="e_disp_queue" style="edgeStyle=orthogonalEdgeStyle;rounded=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;strokeColor=#0078D4;strokeWidth=2;" edge="1" source="dispatcher" target="queue" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_disp_queue_lbl" value="Enqueue 1 msg&#xa;per file" style="edgeLabel;html=1;align=center;verticalAlign=bottom;fontSize=10;fontColor=#0078D4;fontStyle=1;" vertex="1" connectable="0" parent="e_disp_queue">
+          <mxGeometry x="-0.1" relative="1" as="geometry"><mxPoint y="-10" as="offset" /></mxGeometry>
+        </mxCell>
+
+        <!-- Queue → Worker -->
+        <mxCell id="e_queue_worker" style="edgeStyle=orthogonalEdgeStyle;rounded=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;strokeColor=#0078D4;strokeWidth=2;" edge="1" source="queue" target="worker" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_queue_worker_lbl" value="Trigger worker&#xa;(scales to 40 instances)" style="edgeLabel;html=1;align=center;verticalAlign=bottom;fontSize=10;fontColor=#0078D4;fontStyle=1;" vertex="1" connectable="0" parent="e_queue_worker">
+          <mxGeometry x="-0.1" relative="1" as="geometry"><mxPoint y="-10" as="offset" /></mxGeometry>
+        </mxCell>
+
+        <!-- Worker → SharePoint Online (stream download via the Graph drives endpoint) -->
+        <mxCell id="e_worker_sp" edge="1" parent="1" style="edgeStyle=orthogonalEdgeStyle;rounded=1;entryX=1;entryY=0.5;strokeColor=#217346;strokeWidth=2;dashed=1;entryDx=0;entryDy=0;" value="">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="1000" y="380" as="sourcePoint" />
+            <mxPoint x="270" y="380" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e_worker_sp_lbl" connectable="0" parent="e_worker_sp" style="edgeLabel;html=1;align=center;verticalAlign=middle;fontSize=10;fontColor=#217346;fontStyle=1;" value="Stream download → /tmp" vertex="1">
+          <mxGeometry relative="1" x="-0.2" as="geometry">
+            <mxPoint x="30" as="offset" />
+          </mxGeometry>
+        </mxCell>
+
+        <!-- Worker → Vision (for images) -->
+        <mxCell id="e_worker_docintel" style="edgeStyle=orthogonalEdgeStyle;rounded=1;exitX=1;exitY=0.65;entryX=0;entryY=0.5;strokeColor=#FF8C00;strokeWidth=2;" edge="1" source="worker" target="docintel" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_worker_docintel_lbl" value="Describe images&#xa;(gpt-4o, when EXTRACT_IMAGES=true)" style="edgeLabel;html=1;align=center;verticalAlign=bottom;fontSize=10;fontColor=#FF8C00;fontStyle=1;" vertex="1" connectable="0" parent="e_worker_docintel">
+          <mxGeometry x="-0.1" relative="1" as="geometry"><mxPoint y="-10" as="offset" /></mxGeometry>
+        </mxCell>
+
+        <!-- Worker → OpenAI -->
+        <mxCell id="e_worker_openai" style="edgeStyle=orthogonalEdgeStyle;rounded=1;exitX=1;exitY=0.25;entryX=0;entryY=0.5;strokeColor=#FF8C00;strokeWidth=2;" edge="1" source="worker" target="openai" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_worker_openai_lbl" value="Generate embeddings" style="edgeLabel;html=1;align=center;verticalAlign=bottom;fontSize=10;fontColor=#FF8C00;fontStyle=1;" vertex="1" connectable="0" parent="e_worker_openai">
+          <mxGeometry x="-0.1" relative="1" as="geometry"><mxPoint y="-10" as="offset" /></mxGeometry>
+        </mxCell>
+
+        <!-- Worker → AI Search -->
+        <mxCell id="e_worker_search" style="edgeStyle=orthogonalEdgeStyle;rounded=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;strokeColor=#0063B1;strokeWidth=2;" edge="1" source="worker" target="aisearch" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_worker_search_lbl" value="Push chunks + vectors&#xa;+ permissions + has_image" style="edgeLabel;html=1;align=center;verticalAlign=middle;fontSize=10;fontColor=#0063B1;fontStyle=1;" vertex="1" connectable="0" parent="e_worker_search">
+          <mxGeometry x="-0.1" relative="1" as="geometry"><mxPoint x="15" as="offset" /></mxGeometry>
+        </mxCell>
+
+        <!-- Dispatcher → watermark -->
+        <mxCell id="e_disp_wm" style="edgeStyle=orthogonalEdgeStyle;rounded=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;strokeColor=#D4A017;strokeWidth=1;dashed=1;" edge="1" source="dispatcher" target="state_watermark" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_disp_wm_lbl" value="Advance watermark&#xa;on success" style="edgeLabel;html=1;align=center;verticalAlign=middle;fontSize=9;fontColor=#D4A017;fontStyle=2;" vertex="1" connectable="0" parent="e_disp_wm">
+          <mxGeometry x="-0.1" relative="1" as="geometry"><mxPoint x="10" as="offset" /></mxGeometry>
+        </mxCell>
+
+        <!-- Dispatcher → runState -->
+        <mxCell id="e_disp_rs" style="edgeStyle=orthogonalEdgeStyle;rounded=1;exitX=0;exitY=1;entryX=0.5;entryY=0;strokeColor=#D4A017;strokeWidth=1;dashed=1;" edge="1" source="dispatcher" target="state_runstate" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Worker → failedFiles (record failures) -->
+        <mxCell id="e_worker_failed" style="edgeStyle=orthogonalEdgeStyle;rounded=1;exitX=0.3;exitY=1;entryX=1;entryY=0.5;strokeColor=#FF8C00;strokeWidth=1;dashed=1;entryDx=0;entryDy=0;" edge="1" source="worker" target="state_failed" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="950" y="420" />
+              <mxPoint x="740" y="420" />
+              <mxPoint x="740" y="632" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e_worker_failed_lbl" value="record failures" style="edgeLabel;html=1;align=center;verticalAlign=middle;fontSize=9;fontColor=#FF8C00;fontStyle=2;" vertex="1" connectable="0" parent="e_worker_failed">
+          <mxGeometry x="-0.1" relative="1" as="geometry"><mxPoint x="5" as="offset" /></mxGeometry>
+        </mxCell>
+
+        <!-- Worker → Key Vault (when client secret) -->
+        <mxCell id="e_worker_kv" style="edgeStyle=orthogonalEdgeStyle;rounded=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;strokeColor=#E81123;strokeWidth=2;dashed=1;" edge="1" source="worker" target="keyvault" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_worker_kv_lbl" value="Resolve CLIENT_SECRET&#xa;(conditional)" style="edgeLabel;html=1;align=center;verticalAlign=middle;fontSize=9;fontColor=#E81123;fontStyle=2;" vertex="1" connectable="0" parent="e_worker_kv">
+          <mxGeometry x="-0.1" relative="1" as="geometry"><mxPoint x="5" as="offset" /></mxGeometry>
+        </mxCell>
+
+        <!-- Dispatcher → App Insights -->
+        <mxCell id="e_disp_ai" style="edgeStyle=orthogonalEdgeStyle;rounded=1;exitX=0.7;exitY=1;entryX=0;entryY=0.5;strokeColor=#68217A;strokeWidth=1;dashed=1;entryDx=0;entryDy=0;" edge="1" source="dispatcher" target="appinsights" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_worker_ai" style="edgeStyle=orthogonalEdgeStyle;rounded=1;exitX=0;exitY=0.75;entryX=1;entryY=0.5;strokeColor=#68217A;strokeWidth=1;dashed=1;entryDx=0;entryDy=0;exitDx=0;exitDy=0;" edge="1" source="worker" target="appinsights" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- ========== Retrieval arrows ========== -->
+        <!-- Copilot Studio HTTP action → Query API (carries the user's delegated Entra token) -->
+        <mxCell id="e_copilot_queryapi" style="edgeStyle=orthogonalEdgeStyle;rounded=1;exitX=0.85;exitY=0;entryX=0.4;entryY=1;strokeColor=#742774;strokeWidth=2;" edge="1" source="copilot" target="queryapi" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_copilot_queryapi_lbl" value="POST /api/search&#xa;Authorization: Bearer&#xa;(user's delegated token)" style="edgeLabel;html=1;align=center;verticalAlign=middle;fontSize=10;fontColor=#742774;fontStyle=1;" vertex="1" connectable="0" parent="e_copilot_queryapi">
+          <mxGeometry x="0.1" relative="1" as="geometry"><mxPoint x="10" as="offset" /></mxGeometry>
+        </mxCell>
+
+        <!-- Query API → AI Search (hybrid query with permission filter, server-side trim) -->
+        <mxCell id="e_queryapi_search" style="edgeStyle=orthogonalEdgeStyle;rounded=1;exitX=0.5;exitY=0;entryX=0.5;entryY=1;strokeColor=#0063B1;strokeWidth=2;" edge="1" source="queryapi" target="aisearch" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_queryapi_search_lbl" value="Hybrid query&#xa;(vector + keyword +&#xa;semantic ranker +&#xa;permission filter)" style="edgeLabel;html=1;align=center;verticalAlign=middle;fontSize=10;fontColor=#0063B1;fontStyle=1;" vertex="1" connectable="0" parent="e_queryapi_search">
+          <mxGeometry x="-0.1" relative="1" as="geometry"><mxPoint x="10" as="offset" /></mxGeometry>
+        </mxCell>
+
+        <mxCell id="e_user_copilot" style="edgeStyle=orthogonalEdgeStyle;rounded=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;strokeColor=#742774;strokeWidth=2;" edge="1" source="enduser" target="copilot" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_user_copilot_lbl" value="Ask questions" style="edgeLabel;html=1;align=center;verticalAlign=bottom;fontSize=10;fontColor=#742774;fontStyle=1;" vertex="1" connectable="0" parent="e_user_copilot">
+          <mxGeometry x="-0.1" relative="1" as="geometry"><mxPoint y="-10" as="offset" /></mxGeometry>
+        </mxCell>
+
+        <!-- Auth / MI note -->
+        <mxCell id="auth_note" value="All Azure service calls via&#xa;DefaultAzureCredential&#xa;(MI in prod, Azure CLI for dev)&#xa;&#xa;No API keys anywhere.&#xa;CLIENT_SECRET (if used) is&#xa;resolved from Key Vault via&#xa;@Microsoft.KeyVault reference." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF3E0;fontColor=#663300;strokeColor=#FF8C00;strokeWidth=1;dashed=1;fontSize=9;fontStyle=2;arcSize=10;verticalAlign=middle;align=center;" vertex="1" parent="1">
+          <mxGeometry x="80" y="450" width="220" height="160" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

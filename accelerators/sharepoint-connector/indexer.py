@@ -405,12 +405,8 @@ def run_indexer(config: AppConfig | None = None) -> IndexerStats:
     run_started_at = datetime.now(timezone.utc)
 
     try:
-        search.ensure_index(force_recreate=config.indexer.force_recreate_index)
-        if config.indexer.force_recreate_index:
-            logger.warning(
-                "FORCE_RECREATE_INDEX=true — index was destroyed and recreated. "
-                "Unset this flag before the next run to avoid wiping data."
-            )
+        # The index is provisioned by Bicep (infra/sharepoint-index.json +
+        # createSearchIndex deploymentScript). The runtime trusts it exists.
 
         # ----- File discovery ------------------------------------------------
         # For `since-last-run` mode, prefer Graph delta queries — they return
@@ -616,8 +612,6 @@ def process_single_message(payload: dict[str, Any]) -> None:
             f"{cfg.indexer.max_file_size_mb} MB"
         )
         return
-
-    search.ensure_index(force_recreate=False)
 
     tmpdir = os.getenv("TMPDIR") or tempfile.gettempdir()
     os.makedirs(tmpdir, exist_ok=True)

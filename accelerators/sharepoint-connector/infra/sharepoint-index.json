@@ -1,0 +1,74 @@
+{
+  "name": "sharepoint-index",
+  "fields": [
+    { "name": "chunk_id",          "type": "Edm.String",                   "key": true,  "filterable": true,  "searchable": false, "sortable": false, "facetable": false, "retrievable": true },
+    { "name": "parent_id",         "type": "Edm.String",                   "filterable": true,  "searchable": false, "sortable": false, "facetable": false, "retrievable": true },
+    { "name": "content_text",      "type": "Edm.String",                   "filterable": false, "searchable": true,  "sortable": false, "facetable": false, "retrievable": true, "analyzer": "standard.lucene" },
+    { "name": "title",             "type": "Edm.String",                   "filterable": true,  "searchable": true,  "sortable": true,  "facetable": false, "retrievable": true, "analyzer": "standard.lucene" },
+    { "name": "source_url",        "type": "Edm.String",                   "filterable": false, "searchable": false, "sortable": false, "facetable": false, "retrievable": true },
+    { "name": "last_modified",     "type": "Edm.DateTimeOffset",           "filterable": true,  "sortable": true,    "facetable": false, "retrievable": true },
+    { "name": "content_type",      "type": "Edm.String",                   "filterable": true,  "searchable": false, "sortable": false, "facetable": false, "retrievable": true },
+    { "name": "file_size",         "type": "Edm.Int64",                    "filterable": true,  "sortable": false,   "facetable": false, "retrievable": true },
+    { "name": "created_by",        "type": "Edm.String",                   "filterable": true,  "searchable": false, "sortable": false, "facetable": false, "retrievable": true },
+    { "name": "modified_by",       "type": "Edm.String",                   "filterable": true,  "searchable": false, "sortable": false, "facetable": false, "retrievable": true },
+    { "name": "drive_name",        "type": "Edm.String",                   "filterable": true,  "searchable": false, "sortable": false, "facetable": false, "retrievable": true },
+    { "name": "permission_ids",    "type": "Collection(Edm.String)",       "filterable": true,  "searchable": false, "facetable": false, "retrievable": true },
+    { "name": "has_image",         "type": "Edm.Boolean",                  "filterable": true,  "sortable": false,   "facetable": false, "retrievable": true },
+    { "name": "content_path",      "type": "Edm.String",                   "filterable": false, "searchable": false, "sortable": false, "facetable": false, "retrievable": true },
+    {
+      "name": "location_metadata",
+      "type": "Edm.ComplexType",
+      "fields": [
+        { "name": "page_number",       "type": "Edm.Int32",  "filterable": true,  "sortable": false, "facetable": false, "retrievable": true },
+        { "name": "bounding_polygons", "type": "Edm.String", "filterable": false, "searchable": false, "sortable": false, "facetable": false, "retrievable": true }
+      ]
+    },
+    {
+      "name": "content_embedding",
+      "type": "Collection(Edm.Single)",
+      "searchable": true,
+      "retrievable": true,
+      "filterable": false,
+      "sortable": false,
+      "facetable": false,
+      "dimensions": 1024,
+      "vectorSearchProfile": "sp-vector-profile"
+    }
+  ],
+  "vectorSearch": {
+    "algorithms": [
+      { "name": "sp-hnsw", "kind": "hnsw" }
+    ],
+    "profiles": [
+      {
+        "name": "sp-vector-profile",
+        "algorithm": "sp-hnsw",
+        "vectorizer": "sp-aivision-vectorizer"
+      }
+    ],
+    "vectorizers": [
+      {
+        "name": "sp-aivision-vectorizer",
+        "kind": "aiServicesVision",
+        "aiServicesVisionParameters": {
+          "resourceUri": "__MULTIMODAL_ENDPOINT__",
+          "modelVersion": "__MULTIMODAL_MODEL_VERSION__"
+        }
+      }
+    ]
+  },
+  "semantic": {
+    "defaultConfiguration": "sp-semantic-config",
+    "configurations": [
+      {
+        "name": "sp-semantic-config",
+        "prioritizedFields": {
+          "titleField": { "fieldName": "title" },
+          "prioritizedContentFields": [
+            { "fieldName": "content_text" }
+          ]
+        }
+      }
+    ]
+  }
+}

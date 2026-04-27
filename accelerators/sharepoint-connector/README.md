@@ -1,6 +1,8 @@
 # SharePoint → Azure AI Search Connector
 
-A production-oriented push connector that keeps an Azure AI Search index in sync with one (or a subset of) SharePoint site — so a Copilot Studio agent can ground its answers on up-to-date enterprise content while honouring each user's access rights.
+A production-oriented push connector that keeps an Azure AI Search index in sync with one (or a subset of) SharePoint site  so a Microsoft Copilot Studio agent can ground its answers on up-to-date enterprise content while honouring each user's access rights.
+
+This accelerator aims to overcome the [SharePoint knowledge source](https://learn.microsoft.com/en-us/microsoft-copilot-studio/knowledge-add-sharepoint) option [limitations](https://learn.microsoft.com/en-us/microsoft-copilot-studio/requirements-quotas#sharepoint-web-app-limits) on file size (over 200MB) and multi-modal indexing.
 
 ## Table of Contents
 
@@ -9,7 +11,7 @@ A production-oriented push connector that keeps an Azure AI Search index in sync
 - [Architecture Diagram](#architecture-diagram)
 - [Getting Started](#getting-started)
   - [Video Walkthrough](#video-walkthrough)
-  - [Prerequisites and Costs](#prerequisites-and-costs)
+  - [Prerequisites](#prerequisites)
   - [Deployment Options](#deployment-options)
     - [Automated Deployment](#automated-deployment)
     - [Manual Deployment](#manual-deployment)
@@ -18,7 +20,8 @@ A production-oriented push connector that keeps an Azure AI Search index in sync
 - [Testing the Solution](#testing-the-solution)
 - [Project Structure](#project-structure)
 - [How the Pipeline Works](#how-the-pipeline-works)
-- [Customization Guide](#customization-guide)
+- [Extension Guide](#extension-guide)
+  - [Extending with Per-User Security Trimming](#extending-with-per-user-security-trimming)
   - [Addressing Well-Architected H/M Risks](#addressing-well-architected-hm-risks)
   - [Add a New File Format](#add-a-new-file-format)
   - [Change the Embedding Model](#change-the-embedding-model)
@@ -31,9 +34,9 @@ A production-oriented push connector that keeps an Azure AI Search index in sync
 
 ## Objective
 
-Ship a push-model SharePoint → Azure AI Search connector that a Copilot Studio agent can query **with true per-user security trimming**, over a **unified multimodal index** (text + image content in the same vector space), from a **well-defined subset** of a SharePoint site, with **deletion propagation**, **nightly backups**, and **least-privilege Graph access** — all running as a serverless Azure Function.
+Ship a push-model SharePoint → Azure AI Search connector that a Copilot Studio agent can query over a **unified multimodal index** (text + image content in the same vector space), from a **well-defined subset** of a SharePoint site, with **deletion propagation**, **nightly backups**, and **least-privilege Graph access** — all running as a serverless Azure Function.
 
-Azure AI Search's preview SharePoint connector has real limitations: no private endpoint support, no Conditional Access compatibility, no SLA, and limited control over the extraction pipeline. This accelerator is a worked example of how to build a custom push pipeline that gives you all of that control while still using the latest Azure services under the hood (Azure AI Vision multimodal embeddings, Document Intelligence Layout, Copilot Studio's built-in generative orchestration).
+Azure AI Search's [SharePoint connector (preview)](https://docs.azure.cn/en-us/search/search-howto-index-sharepoint-online)  has real limitations: no private endpoint support, no Conditional Access compatibility, no SLA, and limited control over the extraction pipeline. This accelerator is a worked example of how to build a custom push pipeline that gives you all of that control while still using the latest Azure services under the hood (Azure AI Vision multimodal embeddings, Document Intelligence Layout, Copilot Studio's built-in generative orchestration).
 
 ---
 
@@ -42,10 +45,11 @@ Azure AI Search's preview SharePoint connector has real limitations: no private 
 Use cases this accelerator is designed to enable:
 
 1. **Grounded Copilot Studio agents over SharePoint content.** A generative-orchestration agent answers employee questions using the most recent SharePoint documents, with citations back to the source files.
-2. **Per-user security trimming.** Only documents the signed-in user has SharePoint permission to see appear in the agent's retrievals and citations — enforced at retrieval time, not only in post-processing.
-3. **Multimodal retrieval.** Text queries find images too. A question about "our Q3 revenue chart" surfaces the slide containing the chart, not just text that mentions Q3.
-4. **Scoped monitoring.** Point the indexer at a specific site OR a specific folder within a site's library, so one connector instance watches one team's content without touching the rest of the tenant.
-5. **Near-real-time deletion propagation.** When a file is deleted in SharePoint, its chunks leave the index on the next indexer run — no manual cleanup.
+2. **Multimodal retrieval.** Text queries find images too. A question about "our Q3 revenue chart" surfaces the slide containing the chart, not just text that mentions Q3.
+3. **Scoped monitoring.** Point the indexer at a specific site OR a specific folder within a site's library, so one connector instance watches one team's content without touching the rest of the tenant.
+4. **Near-real-time deletion propagation.** When a file is deleted in SharePoint, its chunks leave the index on the next indexer run — no manual cleanup.
+
+Additional feature extensions like **Per-user security trimming** are shared under [Extension Guide](#extension-guide).
 
 ---
 
@@ -55,7 +59,9 @@ Use cases this accelerator is designed to enable:
 
 Editable source: [images/sharepoint-connector-architecture.drawio](images/sharepoint-connector-architecture.drawio) — open in [draw.io](https://app.diagrams.net) or the VS Code Draw.io extension, edit, then re-export to `sharepoint-connector-architecture.png` (same folder) to update the rendered image above.
 
-**Flow at a glance.** The dispatcher (timer) asks SharePoint (via Graph `/delta`) what's changed, enqueues one message per file onto Storage Queue, and advances the per-drive delta token. Queue workers scale out: each pulls a message, streams the file to tempfile, routes through Document Intelligence Layout (if enabled) or the fallback extractors, parallelises chunk vectorisation through Azure AI Vision multimodal, uploads image crops to blob for citation thumbnails, and pushes the chunks (with `permission_ids`) into the AI Search index. A Copilot Studio agent in generative-orchestration mode runs an `OnKnowledgeRequested` topic that calls `/api/search` with the signed-in user's delegated token; the endpoint validates the JWT, resolves the user's group memberships through Graph with the Function's managed identity, applies a permission filter, and returns ranked citations.
+**Flow at a glance (default deployment).** The dispatcher (timer) asks SharePoint (via Graph `/delta`) what's changed, enqueues one message per file onto Storage Queue, and advances the per-drive delta token. Queue workers scale out: each pulls a message, streams the file to tempfile, routes through Document Intelligence Layout (if enabled) or the fallback extractors, parallelises chunk vectorisation through Azure AI Vision multimodal, uploads image crops to blob for citation thumbnails, and pushes the chunks (with `permission_ids`) into the AI Search index. A Copilot Studio agent then queries that index directly via the **built-in Azure AI Search Knowledge Source** connector — vector + keyword + semantic ranker, no custom code — and grounds its responses on the retrieved chunks.
+
+> **Per-user security trimming is NOT enabled by default.** Every authenticated user of the agent sees every chunk in the index. To enforce SharePoint ACLs at query time (so users only see citations from documents they actually have access to), follow **[Extending with Per-User Security Trimming](#extending-with-per-user-security-trimming)** at the end of this document — that opt-in adds an `/api/search` Function App endpoint, an Entra app registration, and a Power Platform connection, and replaces the direct AI Search → Copilot Studio link with an HTTP action that flows the signed-in user's delegated token. The extended architecture diagram is at [images/sharepoint-connector-architecture-with-security-trimming.drawio](images/sharepoint-connector-architecture-with-security-trimming.drawio).
 
 ---
 
@@ -65,50 +71,27 @@ Editable source: [images/sharepoint-connector-architecture.drawio](images/sharep
 
 A ~15 minute end-to-end walkthrough — architecture, deployment, post-deployment configuration, and a smoke test against a real SharePoint site — script in [video-talk-script.md](video-talk-script.md). Recording coming soon; in the meantime, the script is complete enough to self-serve.
 
-### Prerequisites and Costs
+### Prerequisites
 
-#### What you supply
+Everything below is needed for the **default deployment** (Copilot Studio queries Azure AI Search directly — no per-user security trimming). The opt-in extension adds further prerequisites; those are listed in [Extending with Per-User Security Trimming](#extending-with-per-user-security-trimming).
 
-| Prerequisite | Why it can't be auto-provisioned |
-|---|---|
-| A **SharePoint Online site** with the content you want indexed | It's your content; nobody else can create it. |
-| An **Azure subscription** — Owner or User Access Administrator on the target RG | Template assigns RBAC on seven resources. |
-| An Entra role that includes **`Application.ReadWrite.OwnedBy`** on Microsoft Graph — e.g. **Application Administrator** or **Cloud Application Administrator** | The template declares the `/api/search` app registration via the Microsoft Graph Bicep extension; it runs under the deployer's Graph token. |
+**You supply:**
 
-That's it. The template creates the Entra app registration itself — no separate helper script, no `tenantId` to paste in (it's inferred from the deployment context).
+- A **SharePoint Online site** with the content you want indexed.
+- An **Azure subscription** where you hold **Owner** (or *Contributor + User Access Administrator*) on the target resource group — the template assigns RBAC roles on the resources it creates.
+- A **SharePoint Administrator** (or Global Administrator) account to run the `Sites.Selected` per-site grant once after deployment.
+- A **Copilot Studio** environment with the *environment maker* role to add the AI Search index as a Knowledge Source on your agent.
 
-> **Don't have the Entra role?** Ask an admin to run `infra/create-api-app-registration.ps1` once against your tenant, then pass the resulting clientId as `-ApiAudience <guid>` (or `apiAudience` parameter) to this deployment. The template detects a supplied value and skips its own app-registration step — see [Escape hatch when you lack Graph privileges](#escape-hatch-when-you-lack-graph-privileges) below.
+**Workstation tools:**
 
-#### Workstation tools
-
-| Tool | Why |
-|---|---|
-| **[Azure CLI](https://learn.microsoft.com/cli/azure/install-azure-cli)** (`az`) | Bicep deployment + app-registration creation |
-| **Bicep CLI** (bundled with recent `az`) | Template compilation |
-| PowerShell 7+ | Runs `deploy.ps1` |
+- [Azure CLI](https://learn.microsoft.com/cli/azure/install-azure-cli) (`az`) — runs the Bicep deployment.
+- [PowerShell 7+](https://learn.microsoft.com/powershell/scripting/install/installing-powershell-on-windows) — required by `infra/deploy.ps1` and the Sites.Selected helper (Windows PowerShell 5.x will not work).
 
 No local Python, `uv`, or `func` CLI needed — the function code is pulled from a GitHub Release by the deployment itself.
 
 #### What the template creates
 
 Storage Account (with queue / table / blob containers), Log Analytics + Application Insights, **Azure AI Search (Basic)**, **Microsoft Foundry / Azure AI Services** multi-service (hosts Azure AI Vision multimodal embeddings), **Document Intelligence** (Layout), **Key Vault**, Flex Consumption plan, and the Function App — plus every RBAC assignment on the Function's managed identity. No "pre-existing resource" paste-in.
-
-#### Costs
-
-Every resource below bills independently — click through for the official, up-to-date rates for your region. The shape of the bill is **mostly fixed per month from AI Search + Key Vault + Storage overhead, plus per-call consumption on the AI services during ingestion and query**.
-
-| Resource | Pricing |
-|---|---|
-| Azure AI Search | [Pricing](https://azure.microsoft.com/pricing/details/search/) |
-| Azure AI Services — Vision multimodal embeddings | [Pricing](https://azure.microsoft.com/pricing/details/cognitive-services/computer-vision/) |
-| Azure AI Document Intelligence | [Pricing](https://azure.microsoft.com/pricing/details/ai-document-intelligence/) |
-| Azure Functions (Flex Consumption) | [Pricing](https://azure.microsoft.com/pricing/details/functions/) |
-| Azure Storage | [Pricing](https://azure.microsoft.com/pricing/details/storage/blobs/) |
-| Azure Key Vault | [Pricing](https://azure.microsoft.com/pricing/details/key-vault/) |
-| Azure Monitor (Application Insights + Log Analytics) | [Pricing](https://azure.microsoft.com/pricing/details/monitor/) |
-| Azure Managed Identity | [Pricing](https://azure.microsoft.com/pricing/details/active-directory/) (included with Entra tenant) |
-
-> Need an overall estimate? Plug the resource SKUs into the [Azure pricing calculator](https://azure.microsoft.com/pricing/calculator/).
 
 ### Deployment Options
 
@@ -119,51 +102,51 @@ The template asks for **two values** — everything else is inferred, defaulted,
 | `baseName` | ✅ | Resource-name prefix (3–16 chars). A uniqueness hash is appended for globally-unique resources. |
 | `sharePointSiteUrl` | ✅ | Full URL of the SharePoint site to monitor. |
 | `location` | optional | Azure region (default `resourceGroup().location`). Pick one that supports Azure AI Vision multimodal 4.0. |
-| `apiAudience` | optional | **Escape hatch only** — leave empty on the normal path. Supply a pre-created Entra app clientId (GUID or `api://<guid>`) when the deployer lacks `Application Administrator`. See [Escape hatch when you lack Graph privileges](#escape-hatch-when-you-lack-graph-privileges). |
+| `enableSecurityTrimming` | optional | **Default `false`** — Copilot Studio queries AI Search directly. Flip to `true` only as part of the [Extending with Per-User Security Trimming](#extending-with-per-user-security-trimming) walkthrough. |
+| `apiAudience` | optional | Used **only** when `enableSecurityTrimming = true`. Supply a pre-created Entra app clientId (GUID or `api://<guid>`) when the deployer lacks `Application Administrator`; leave empty otherwise. |
 
 Handled by the template itself:
 
 - **Tenant ID** comes from the deployment context (`subscription().tenantId`).
-- **`apiAudience`** — the template declares the `/api/search` Entra app registration via the Microsoft Graph Bicep extension, exposes the `access_as_user` delegated scope, and declares `GroupMember.Read.All` (Application) in the required-resource-access manifest. Admin consent on that Graph permission remains a post-deploy step (see below). The resulting client ID is emitted as the `apiAudience` deployment output.
 - **Function-app package URL** is hardcoded to the latest GitHub Release (`sharepoint-connector-latest`); edit `main.bicep` directly if you want to point at a fork.
-
-#### Escape hatch when you lack Graph privileges
-
-The normal path relies on the deployer holding **`Application Administrator`** (or any role that includes `microsoft.directory/applications/createAsOwner` / Graph `Application.ReadWrite.OwnedBy`). In large tenants, Azure RG Owners often don't have this role, and the Bicep deployment fails with `Authorization_RequestDenied — Insufficient privileges to complete the operation` against the `Microsoft.Graph/applications` resource.
-
-Workaround — ask a directory admin to run the one-shot helper once, then pass the clientId back into the template:
-
-1. **Admin side** (one-time, any shell with `az login` as an Application Administrator):
-   ```powershell
-   .\infra\create-api-app-registration.ps1 -DisplayName "sp-indexer SharePoint Connector API"
-   # → prints the clientId (GUID) to copy
-   ```
-2. **Deployer side** — pass the clientId as `-ApiAudience`:
-   ```powershell
-   .\infra\deploy.ps1 -ResourceGroup sharepoint-rg -ApiAudience 00000000-1111-2222-3333-444444444444
-   ```
-   The template detects the supplied value, skips its own `Microsoft.Graph/applications` resource entirely, and wires the Function App's `API_AUDIENCE` setting to your clientId. Both `<guid>` and `api://<guid>` forms are accepted.
-
-Everything else — app-registration admin consent, Sites.Selected, and the Copilot Studio topic — is identical to the normal path.
 
 #### Automated Deployment
 
 [![Deploy to Azure](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2Fgokseloral%2FCopilot-Studio-and-Azure%2Fmain%2Faccelerators%2Fsharepoint-connector%2Fdeploy%2Fazuredeploy.json)
 
-Clicking the button opens the Azure portal's custom-deployment form pre-populated with the five parameters above. The template provisions **everything** — Storage Account (+ queue / table / containers), Log Analytics + App Insights, Azure AI Search (Basic), Microsoft Foundry / Azure AI Services multi-service (hosts Vision multimodal), Document Intelligence (Layout), Key Vault, Flex Consumption plan + Function App, and every RBAC assignment on the Function's managed identity. It also **pulls the latest CI-built function-app package** from GitHub Releases (`sharepoint-connector-latest`) via an ARM `deploymentScript` and writes it to the Function App's storage container — so the code is already running when the deployment finishes. No `func publish` step.
+Clicking the button opens the Azure portal's custom-deployment form. Fill in the two required values (`baseName`, `sharePointSiteUrl`) — leave the rest at their defaults. The template provisions **everything** — Storage Account (+ queue / table / containers), Log Analytics + App Insights, Azure AI Search (Basic), Microsoft Foundry / Azure AI Services multi-service (hosts Vision multimodal), Document Intelligence (Layout), Key Vault, Flex Consumption plan + Function App, and every RBAC assignment on the Function's managed identity. It also **pulls the latest CI-built function-app package** from GitHub Releases (`sharepoint-connector-latest`) via an ARM `deploymentScript` and writes it to the Function App's storage container — so the code is already running when the deployment finishes. No `func publish` step.
 
-After the ARM deployment succeeds, three manual steps remain — each requires Entra / SharePoint / Power Platform roles that Azure RG Owners typically don't hold, which is why they stay out of the one-click flow:
+After the ARM deployment succeeds, two manual steps remain — both can be completed by an admin in under 10 minutes:
 
-1. **Grant Sites.Selected on the target site** (least privilege — *strongly recommended*). Requires SharePoint Administrator or Global Administrator:
+1. **Grant Sites.Selected on the target site** (least privilege — *strongly recommended*). Requires SharePoint Administrator or Global Administrator. The script uses the Microsoft Graph PowerShell SDK because the per-site grant (`POST /sites/{id}/permissions`) needs the `Sites.FullControl.All` delegated scope, which the Azure CLI's first-party token does not carry.
+
+   **Prerequisites** — install [PowerShell 7+](https://learn.microsoft.com/powershell/scripting/install/installing-powershell-on-windows) (the Graph SDK requires it; Windows PowerShell 5.x will not work):
+   ```powershell
+   winget install --id Microsoft.PowerShell --source winget
+   ```
+   Then open a `pwsh` window (not `powershell`) and run:
    ```powershell
    .\infra\grant-site-permission.ps1 `
        -SiteUrl "https://contoso.sharepoint.com/sites/YourSite" `
        -FunctionAppName "<function-app-name>"
    ```
-2. **Grant `GroupMember.Read.All` (Application)** Graph permission to the managed identity so `/api/search` can resolve transitive group memberships. Requires Global Administrator or Cloud Application Administrator.
-3. **Import the Copilot Studio topic** [`copilot-studio-topics/OnKnowledgeRequested.yaml`](copilot-studio-topics/OnKnowledgeRequested.yaml) into your generative-orchestration agent, fill in the two placeholders (Function App hostname + OAuth2 connection reference), and publish. Requires the Copilot Studio environment maker role.
+   On first run the script auto-installs `Microsoft.Graph.Authentication` + `Microsoft.Graph.Applications` in the CurrentUser scope (~30 s, ~25 MB) and prompts you to consent to the required Graph scopes in the browser. Re-runs reuse the cached token.
 
-Then wait 2–10 minutes for RBAC propagation and let the timer fire — or trigger manually.
+2. **Add Azure AI Search as a Knowledge Source on your Copilot Studio agent.** Built-in connector — no Entra app registration, no Power Platform connection, no topic YAML to import. The Bicep deployment provisioned the index schema before exiting, so Copilot Studio's wizard sees the vector index immediately. Requires the Copilot Studio environment maker role.
+
+   - Open the agent in **Copilot Studio → Knowledge → + Add knowledge → Azure AI Search**.
+   - Fill in:
+     - **Search service** — pick the search service the deployment created (`<baseName>-search-<hash>`).
+     - **Index name** — `sharepoint-index`.
+     - **Authentication** — choose **Managed identity** if your Copilot Studio environment supports it, then grant the environment's identity the **Search Index Data Reader** role on the search service. Otherwise pick **API key** and paste a query key from **Azure Portal → Search service → Keys → Query keys**.
+     - **Semantic configuration** — `sp-semantic-config`.
+     - **Vector field** — `content_embedding` (the index has a registered AI-Services-Vision vectorizer, so Copilot Studio queries are vectorised server-side; no client-side embedding code).
+   - **Title field** — `title`. **URL field** — `source_url`. **Content field** — `content_text`. (Field names are defined in [infra/sharepoint-index.json](infra/sharepoint-index.json).)
+   - Click **Add** and **Publish** the agent.
+
+   The agent will now retrieve grounded chunks (text + image descriptions) directly from the index using vector + keyword + semantic ranker. **Caveat:** this default flow has *no per-user security trimming* — every authenticated user of the agent sees every chunk in the index. If your library contains content with mixed audiences, see **[Extending with Per-User Security Trimming](#extending-with-per-user-security-trimming)** before you publish.
+
+Wait 2–10 minutes for RBAC propagation, then let the hourly indexer timer fire (or trigger manually) so documents start landing in the pre-provisioned index.
 
 #### Manual Deployment
 
@@ -174,32 +157,25 @@ Preferred when you need to review or customise each step.
    git clone <repo-url>
    cd accelerators/sharepoint-connector
    ```
-2. **Copy the sample parameter file**, then fill in the five required values:
+2. **Copy the sample parameter file**, then fill in the two required values:
    ```powershell
    Copy-Item infra/main.bicepparam.sample infra/main.bicepparam
-   # Edit infra/main.bicepparam with your baseName, tenantId,
-   # sharePointSiteUrl, and apiAudience.
+   # Edit infra/main.bicepparam with your baseName and sharePointSiteUrl.
    ```
 3. **Run the deploy script** — creates the RG if needed, runs the Bicep, and seeds the function-app package from `sharepoint-connector-latest` automatically:
    ```powershell
    .\infra\deploy.ps1 -ResourceGroup my-rg
    ```
 4. **Grant Sites.Selected** on your target site (see Automated Deployment step 1).
-5. **Grant `GroupMember.Read.All` (Application)** on Graph to the managed identity (see Automated Deployment step 2).
-6. **Import the Copilot Studio topic** (see Automated Deployment step 3).
+5. **Add the AI Search index as a Knowledge Source** in Copilot Studio (see Automated Deployment step 2).
 
-**Fork / custom-code users** — the template pulls from `github.com/Azure/Copilot-Studio-and-Azure/releases/download/sharepoint-connector-latest/sharepoint-connector.zip` by default. If you're deploying from a fork with code changes, either:
-
-- Let the `Release SharePoint Connector` GitHub Actions workflow in your fork run (it republishes the `sharepoint-connector-latest` tag in your fork, and you point `packageReleaseUrl` at your fork), OR
-- Publish the zip to any public URL and pass `packageReleaseUrl=<your-url>` as a Bicep parameter override.
+**Fork / custom-code users** — the template's `packageReleaseUrl` (defined as a `var` near the top of [infra/main.bicep](infra/main.bicep)) points at this repo's `sharepoint-connector-latest` GitHub Release. If you're deploying from a fork with code changes, let the `Release SharePoint Connector` GitHub Actions workflow run in your fork (it republishes the same tag against your fork's commits) and edit the `packageReleaseUrl` line in your local `main.bicep` to point at your fork.
 
 **Pushing new code after the initial deploy** — merge to `main`, wait for the `Release SharePoint Connector` Action to republish `sharepoint-connector-latest`, then restart the Function App so it re-pulls from blob:
 
 ```powershell
 az functionapp restart --name <function-app-name> --resource-group <rg>
 ```
-
-(Or configure an Event-Grid-triggered redeploy — out of scope for the accelerator.)
 
 #### Post-deployment tuning (no redeploy needed)
 
@@ -212,9 +188,10 @@ Every operational knob lives as an **app setting** on the Function App — chang
 | `PROCESSING_MODE` | `since-last-run` | `full` for cleanup; `since-date` + `START_DATE` for historical backfills. |
 | `VECTORISE_CONCURRENCY` / `MULTIMODAL_MAX_IN_FLIGHT` | `8` / `8` | Raise for faster initial bulk loads (subject to Vision TPS). |
 | `BACKUP_SCHEDULE` / `BACKUP_RETENTION_DAYS` | `0 0 3 * * *` / `7` | Adjust nightly backup cadence + retention. |
-| `FORCE_RECREATE_INDEX` | `false` | Set `true` **once** after a breaking index-schema change, then flip back. |
 
-See the **[Customization Guide](#customization-guide)** for the complete list + recipes.
+> **Schema-changing settings are not in this table.** The index schema (fields, vector profile, semantic config) lives in [infra/sharepoint-index.json](infra/sharepoint-index.json) and is provisioned by the Bicep deployment. Edit the JSON and re-run `deploy.ps1` — there is no longer an app-setting flag for index recreate.
+
+See the **[Extension Guide](#extension-guide)** for the complete list + recipes.
 
 ---
 
@@ -370,8 +347,10 @@ sharepoint-connector/
 │                                     #   cool-off
 │── chunker.py                        # chunk_text / chunk_blocks
 │── blocks.py                         # Block + LocationMetadata dataclasses
-│── search_client.py                  # AI Search schema + ensure_index +
-│                                     #   search_with_trimming (permission filter)
+│── search_client.py                  # AI Search data plane: upload_documents,
+│                                     #   delete-by-parent, search_with_trimming
+│                                     #   (the schema lives in
+│                                     #    infra/sharepoint-index.json)
 │── search_security.py                # JWT validation, Graph group resolution,
 │                                     #   OData filter builder
 │── image_storage.py                  # Upload image crops to blob for citations
@@ -392,7 +371,11 @@ sharepoint-connector/
 │   ├── main.bicep                    # Full IaC: Function App + Storage
 │   │                                 #   (queue/table/state/images/backup) +
 │   │                                 #   App Insights + optional Key Vault +
-│   │                                 #   optional Document Intelligence + RBAC
+│   │                                 #   optional Document Intelligence + RBAC +
+│   │                                 #   AI Search index provisioning
+│   ├── sharepoint-index.json         # AI Search index schema (PUT'd by Bicep
+│   │                                 #   at deploy time — single source of
+│   │                                 #   truth for fields/vectorizer/semantic)
 │   ├── main.bicepparam               # Live parameters (gitignored)
 │   ├── main.bicepparam.sample        # Committed template
 │   ├── deploy.ps1                    # One-command deploy
@@ -468,7 +451,121 @@ Each scheduled run follows these steps.
 
 ---
 
-## Customization Guide
+## Extension Guide
+
+### Extending with Per-User Security Trimming
+
+The default deployment lets every authenticated agent user see every chunk in the index. That's fine for a single-audience knowledge base (e.g. a public-to-employees policy library), but if your SharePoint site mixes content with **different audiences** — confidential HR docs alongside team-wide announcements, restricted-project folders alongside public content — you need **per-user security trimming**: each user only sees citations from documents they actually have SharePoint access to.
+
+This section is an **opt-in walkthrough** for adding that feature on top of the default deployment. It's longer because it touches Entra (app registration), Microsoft Graph (admin consent on `GroupMember.Read.All`), and Power Platform (a custom connection) — three places that the default flow doesn't go near.
+
+> **Architecture changes — extended diagram:** [images/sharepoint-connector-architecture-with-security-trimming.drawio](images/sharepoint-connector-architecture-with-security-trimming.drawio)
+>
+> Instead of Copilot Studio querying AI Search directly (default), it calls a `/api/search` HTTP endpoint on the Function App with the signed-in user's delegated Entra token. The Function App validates the JWT, resolves the user's transitive group memberships through Graph, builds an OData `permission_ids/any(...)` filter, and runs the hybrid query against AI Search server-side. Only chunks the caller has SharePoint access to come back.
+
+#### What this opt-in adds
+
+| New piece | Why |
+|---|---|
+| **Entra app registration** for `/api/search` | Defines the `access_as_user` delegated scope that Copilot Studio authenticates against. |
+| **Graph application permission `GroupMember.Read.All`** on the Function's MI | Lets `/api/search` resolve the caller's transitive group memberships at query time. |
+| **Power Platform connection** ("HTTP with Microsoft Entra ID (preauthorized)") | Lets Copilot Studio's HTTP action acquire a delegated token for the signed-in user against the API app. |
+| **`OnKnowledgeRequested` topic** | Generative-orchestration lifecycle trigger that replaces Copilot Studio's built-in knowledge call with a POST to `/api/search`. |
+
+#### Additional prerequisites
+
+In addition to the default-deployment [Prerequisites](#prerequisites):
+
+- **Application Administrator** Entra role (or any role that includes `Application.ReadWrite.OwnedBy` on Graph) — the template registers a new Entra app via the Microsoft Graph Bicep extension. Alternative: ask an admin to pre-create the app via [`infra/create-api-app-registration.ps1`](infra/create-api-app-registration.ps1) and pass the resulting clientId as `apiAudience`.
+- **Cloud Application Administrator** or **Global Administrator** — one-shot grant of the `GroupMember.Read.All` Application permission to the Function's managed identity.
+- **Copilot Studio environment maker** role — creating the Power Platform connection and importing the topic.
+
+#### Walkthrough
+
+##### Step 1 — Re-deploy with `enableSecurityTrimming = true`
+
+The default deployment provisioned everything except the Entra app registration. Re-running the template with the flag flipped on adds it idempotently — your existing search index, function code, storage, etc. are unaffected.
+
+```powershell
+.\infra\deploy.ps1 -ResourceGroup my-rg -EnableSecurityTrimming
+# OR pass parameters directly:
+az deployment group create `
+    --resource-group my-rg `
+    --template-file infra\main.bicep `
+    --parameters infra\main.bicepparam `
+    --parameters enableSecurityTrimming=true
+```
+
+If the deployer lacks `Application Administrator`, ask an admin to pre-create the app first and pass the clientId:
+
+```powershell
+# Admin (one-time, pwsh window with `az login` as Application Administrator):
+.\infra\create-api-app-registration.ps1 -DisplayName "sp-indexer SharePoint Connector API"
+# Copy the printed clientId.
+
+# Deployer:
+.\infra\deploy.ps1 -ResourceGroup my-rg -EnableSecurityTrimming -ApiAudience <clientId-guid>
+```
+
+The deployment output now includes a non-empty `apiAudience` clientId — note it; Step 3 needs it.
+
+##### Step 2 — Grant `GroupMember.Read.All` to the Function's MI
+
+`/api/search` calls Graph as the function's MI to resolve the caller's transitive group memberships. From a `pwsh` window:
+
+```powershell
+.\infra\grant-graph-permission.ps1 -FunctionAppName "<function-app-name>"
+```
+
+The script auto-installs the Graph SDK on first run and prompts you to consent to `AppRoleAssignment.ReadWrite.All` in the browser. Idempotent — re-runs return "already granted".
+
+##### Step 3 — Wire up Copilot Studio (3a → 3b → 3c)
+
+This is three sub-steps because the topic's HTTP action authenticates with **"HTTP With Microsoft Entra ID"**, which needs a Power Platform connection that points at the API app registration.
+
+**3a. Pre-authorize Power Platform on the API app registration** *(one-time per tenant; requires Application Administrator)*. The HTTP-with-Entra connector requests the delegated scope `access_as_user` against the API app. To skip per-user consent prompts inside Copilot Studio, add Power Platform's first-party clientId as a pre-authorized client:
+
+- Open **Entra admin centre → App registrations → [your `<baseName>` SharePoint Connector API]** (the app whose clientId equals the deployment's `apiAudience` output) → **Expose an API**.
+- Confirm the scope `access_as_user` is listed (the template creates it).
+- Click **+ Add a client application** → enter the Power Platform clientId **`475226c6-020e-4fb2-8a90-7a972cbfc1d4`** ("Power Apps Runtime Service") → tick the `access_as_user` scope → **Add application**. Repeat for the Copilot Studio first-party clientId **`38aa3b87-a06d-4817-b275-7a316988d93b`** if your tenant uses the standalone Copilot Studio runtime.
+- Pre-authorizing these IDs lets users bypass the per-user consent dialog while still going through full delegated OAuth.
+
+> **Verify the first-party clientIds against your tenant before relying on them.** If 3a's pre-authorization doesn't suppress the consent dialog, capture the actual `appId` from a Copilot Studio test-chat sign-in trace and use that instead.
+
+**3b. Create the Power Platform connection.** In your Copilot Studio environment:
+
+- Open **Power Apps → Connections → + New connection** (or in Copilot Studio: **Settings → Generative AI → Connections**).
+- Search for **"HTTP with Microsoft Entra ID (preauthorized)"** → **Create**.
+- Fill in:
+  - **Base resource URL** — `https://<function-app-hostname>` (e.g. `https://spi-func-cwx3vw.azurewebsites.net`).
+  - **Microsoft Entra ID resource URI (Application ID URI)** — `api://<apiAudience-clientId>` (the `apiAudience` deployment output).
+- Sign in with a tenant user (the connection author). After consent, the connection appears as **"HTTP with Microsoft Entra ID"** with status *Connected*. Note the connection's **reference name** (something like `shared_httpwithazureadpreauthorized_xxx`) — you'll paste it into the topic in 3c.
+
+**3c. Switch the agent from direct AI Search to the OnKnowledgeRequested topic.**
+
+- In Copilot Studio, open the agent → **Knowledge** → **remove** the Azure AI Search knowledge source you added during the default deployment (the agent should have *no* knowledge sources for this path).
+- Open **Topics → + Add a topic → From YAML**, paste the contents of [`copilot-studio-topics/OnKnowledgeRequested.yaml`](copilot-studio-topics/OnKnowledgeRequested.yaml).
+- Replace the two placeholders:
+  - `<function-app-hostname>` → your Function App hostname.
+  - `<api-oauth-connection-reference>` → the connection reference name from 3b.
+- Confirm the topic name is exactly `OnKnowledgeRequested` (the trigger is resolved by name match).
+- **Publish**.
+
+At runtime: a user chats → planner asks a knowledge question → `OnKnowledgeRequested` fires → HTTP action obtains a delegated token for *that user* via the connection → POST `/api/search` → the function validates the JWT, resolves group memberships through Graph, applies the `permission_ids/any(p: p eq '<id>')` filter on AI Search, and returns only chunks the caller is authorised for.
+
+#### Verifying it works
+
+Sanity tests with two users — User A who has SharePoint access to a confidential file, and User B who does not:
+
+1. **As User A**, ask a question whose answer is in the confidential file. Confirm the agent returns a citation pointing at that file.
+2. **As User B**, ask the same question. Confirm the agent returns no citation from that file (and either a different citation if other files match, or "I couldn't find an answer").
+3. Watch the Function App's Application Insights logs — `/api/search` should record the caller's OID and the resolved group OIDs on each request. The OData filter applied to AI Search should be visible in the request payload.
+
+#### Caveats
+
+- **Permission snapshot at index time.** `permission_ids` is captured when each file is indexed. If permissions change in SharePoint, the index doesn't refresh until the next indexer run touches that file. For an immediate refresh, set `PROCESSING_MODE=full` for one pass.
+- **Group resolution scope.** The Function's MI resolves *Entra* group memberships via `GroupMember.Read.All`. SharePoint-only groups (those that don't mirror to Entra) are not in the resolved list — accept that limitation or extend `search_security.py` to call SharePoint REST in addition.
+- **Identity cache.** The function caches resolved identities for `IDENTITY_CACHE_TTL_SECONDS` (default 300s) to keep latency down. Group membership changes propagate after that window.
 
 ### Addressing Well-Architected H/M Risks
 
@@ -519,14 +616,13 @@ Concrete playbooks for the high / medium severity items still open in the Well-A
 
 The accelerator is built around Azure AI Vision multimodal (1024d). Swap paths:
 
-- **Different Vision model version** → set `MULTIMODAL_MODEL_VERSION` (default `2023-04-15`). If the vector dimension changes, set `FORCE_RECREATE_INDEX=true` for ONE run, then flip back to false.
+- **Different Vision model version** → edit the Bicep `multimodalModelVersion` var (which the deployment substitutes into [infra/sharepoint-index.json](infra/sharepoint-index.json)) and re-run `deploy.ps1`. The PUT in `createSearchIndex` updates the index in place; if the vector dimension also changes, see the destructive workflow under [Change the Search Index Schema](#change-the-search-index-schema).
 - **Different provider (e.g. Azure OpenAI text-embedding-3-large for text-only deployments)** →
   1. Rewrite [multimodal_embeddings_client.py](multimodal_embeddings_client.py) (or add a sibling `text_embeddings_client.py`) around the target REST API. Keep the semaphore + 429 cool-off pattern.
-  2. Change `content_embedding` dimensions in `_build_index` in [search_client.py](search_client.py).
-  3. Update the `Vectorizer` registered on the index — use `AzureOpenAIVectorizer` instead of `AIServicesVisionVectorizer`.
-  4. Set `FORCE_RECREATE_INDEX=true` for one run.
-  5. Image chunks will either need a separate vector field (dual-vector Pattern C) or will fall back to captions-as-text.
-- **Different dimension on the same model** → only the Bicep `multimodalModelVersion` + the `_build_index` `dimensions` parameter change; everything else is already parametrised.
+  2. Edit [infra/sharepoint-index.json](infra/sharepoint-index.json) — change `content_embedding.dimensions` and replace the `aiServicesVision` vectorizer block with `azureOpenAIVectorizer` parameters.
+  3. Re-deploy. If the dimension changed, follow the destructive-recreate workflow under [Change the Search Index Schema](#change-the-search-index-schema).
+  4. Image chunks will either need a separate vector field (dual-vector Pattern C) or will fall back to captions-as-text.
+- **Different dimension on the same model** → only [infra/sharepoint-index.json](infra/sharepoint-index.json) changes (`content_embedding.dimensions`); everything else is already parametrised.
 
 ### Switch Between Processing Modes
 
@@ -561,9 +657,15 @@ Rule of thumb: keep `VECTORISE_CONCURRENCY` ≤ `MULTIMODAL_MAX_IN_FLIGHT`. The 
 
 ### Change the Search Index Schema
 
-Schema lives in `_build_index()` in [search_client.py](search_client.py). Two classes of change:
+Schema lives in [infra/sharepoint-index.json](infra/sharepoint-index.json) and is provisioned by the Bicep deployment's `createSearchIndex` deploymentScript. The Python application no longer creates or updates the index — it trusts the Bicep-provisioned schema. Two classes of change:
 
-**Additive (safe)** — new `SimpleField` / `SearchableField`, new semantic keyword fields, new filters. `create_or_update_index` handles these in place; existing documents keep their old values (field reads as `null`). A subsequent indexer run populates the new fields as files are touched.
+**Additive (safe)** — new fields, new semantic keyword fields, new filters. The deploymentScript issues `PUT /indexes/sharepoint-index`, which Azure AI Search treats as create-or-update. Existing documents keep their old values (the new field reads as `null`). A subsequent indexer run populates it as files are touched.
+
+Workflow:
+
+1. Edit [infra/sharepoint-index.json](infra/sharepoint-index.json).
+2. Re-run `.\infra\deploy.ps1 -ResourceGroup <rg>` (or click the **Deploy to Azure** button). The `createSearchIndex` deploymentScript fires and PUTs the updated schema.
+3. Verify: `az search index show --service-name <name> --name sharepoint-index --query "fields[].name"`.
 
 **Destructive (requires recreate)**:
 
@@ -572,13 +674,13 @@ Schema lives in `_build_index()` in [search_client.py](search_client.py). Two cl
 - Renaming a field
 - Changing a field's type
 
-Workflow:
+Azure AI Search rejects in-place updates of these. The nightly backup under `backup/` is your safety net during the transition. Workflow:
 
-1. Make the code change in `_build_index`.
-2. Set `FORCE_RECREATE_INDEX=true` in app settings (or in `main.bicepparam`).
-3. Deploy. The next indexer run calls `_index_client.delete_index(name)` then re-creates with the new schema (the `ensure_index(force_recreate=True)` path in [search_client.py](search_client.py)).
-4. **Unset** the flag immediately after the first post-change run — otherwise every subsequent dispatcher wipes the index again.
-5. Run a full reindex (`PROCESSING_MODE=full` for one pass) to repopulate data under the new schema. The nightly backup under `backup/` is your safety net during the transition.
+1. Trigger an on-demand backup via `POST /api/backup` (function key required) so you have a fresh dump.
+2. Delete the index: `az search index delete --service-name <name> --name sharepoint-index --yes`.
+3. Edit [infra/sharepoint-index.json](infra/sharepoint-index.json) with the new schema.
+4. Re-run `.\infra\deploy.ps1` — the deploymentScript PUTs the new index from scratch.
+5. Run a full reindex (`PROCESSING_MODE=full` for one pass) to repopulate data under the new schema.
 
 ---
 

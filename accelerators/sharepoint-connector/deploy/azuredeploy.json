@@ -6,7 +6,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.42.1.51946",
-      "templateHash": "17282469380471628092"
+      "templateHash": "8796817124261319663"
     }
   },
   "parameters": {
@@ -31,16 +31,23 @@
         "description": "Full SharePoint site URL the connector will monitor, e.g. https://contoso.sharepoint.com/sites/YourSite"
       }
     },
+    "enableSecurityTrimming": {
+      "type": "bool",
+      "defaultValue": false,
+      "metadata": {
+        "description": "Per-user security trimming. Default false: Copilot Studio queries Azure AI Search directly as a Knowledge Source — simplest deployment, no Entra app registration, no Power Platform connection. Set true to also create the /api/search Entra app registration that the OnKnowledgeRequested topic uses to enforce SharePoint ACLs at query time. Requires `Application Administrator` Entra role unless `apiAudience` is supplied. See the README section \"Extending with Per-User Security Trimming\" for the full opt-in walkthrough."
+      }
+    },
     "apiAudience": {
       "type": "string",
       "defaultValue": "",
       "metadata": {
-        "description": "Optional escape hatch. When empty (the default), the template creates the Entra app registration for /api/search itself via the Microsoft Graph Bicep extension — the deployer needs the `Application Administrator` Entra role for that. When non-empty, the template skips creating the app and uses this client ID instead — useful when the deployer does NOT have Graph privileges and an admin has pre-created the app registration via infra/create-api-app-registration.ps1. Accepts a bare GUID or an `api://<clientId>` URI."
+        "description": "Optional escape hatch — only relevant when enableSecurityTrimming = true. When empty, the template creates the Entra app registration itself via the Microsoft Graph Bicep extension (deployer needs `Application Administrator`). When non-empty, the template skips creating the app and uses this client ID instead — useful when the deployer lacks Graph privileges and an admin has pre-created the app via infra/create-api-app-registration.ps1. Accepts a bare GUID or an `api://<clientId>` URI."
       }
     }
   },
   "variables": {
-    "shouldCreateAppRegistration": "[empty(parameters('apiAudience'))]",
+    "shouldCreateAppRegistration": "[and(parameters('enableSecurityTrimming'), empty(parameters('apiAudience')))]",
     "packageReleaseUrl": "https://github.com/gokseloral/Copilot-Studio-and-Azure/releases/download/sharepoint-connector-latest/sharepoint-connector.zip",
     "searchIndexName": "sharepoint-index",
     "indexerSchedule": "0 0 * * * *",
@@ -60,7 +67,6 @@
     "multimodalModelVersion": "2023-04-15",
     "imagesContainerName": "images",
     "extractImages": true,
-    "forceRecreateIndex": false,
     "alwaysAllowedIds": "",
     "searchSku": "basic",
     "nameSuffix": "[take(uniqueString(resourceGroup().id, parameters('baseName')), 6)]",
@@ -96,7 +102,8 @@
     "accessAsUserScopeId": "[guid(resourceGroup().id, 'access_as_user')]",
     "graphAppId": "00000003-0000-0000-c000-000000000000",
     "groupMemberReadAllRoleId": "98830695-27a2-44f7-8c18-0c3ebc9698f6",
-    "suppliedClientId": "[if(startsWith(parameters('apiAudience'), 'api://'), substring(parameters('apiAudience'), 6), parameters('apiAudience'))]"
+    "suppliedClientId": "[if(startsWith(parameters('apiAudience'), 'api://'), substring(parameters('apiAudience'), 6), parameters('apiAudience'))]",
+    "indexSchema": "{\n  \"name\": \"sharepoint-index\",\n  \"fields\": [\n    { \"name\": \"chunk_id\",          \"type\": \"Edm.String\",                   \"key\": true,  \"filterable\": true,  \"searchable\": false, \"sortable\": false, \"facetable\": false, \"retrievable\": true },\n    { \"name\": \"parent_id\",         \"type\": \"Edm.String\",                   \"filterable\": true,  \"searchable\": false, \"sortable\": false, \"facetable\": false, \"retrievable\": true },\n    { \"name\": \"content_text\",      \"type\": \"Edm.String\",                   \"filterable\": false, \"searchable\": true,  \"sortable\": false, \"facetable\": false, \"retrievable\": true, \"analyzer\": \"standard.lucene\" },\n    { \"name\": \"title\",             \"type\": \"Edm.String\",                   \"filterable\": true,  \"searchable\": true,  \"sortable\": true,  \"facetable\": false, \"retrievable\": true, \"analyzer\": \"standard.lucene\" },\n    { \"name\": \"source_url\",        \"type\": \"Edm.String\",                   \"filterable\": false, \"searchable\": false, \"sortable\": false, \"facetable\": false, \"retrievable\": true },\n    { \"name\": \"last_modified\",     \"type\": \"Edm.DateTimeOffset\",           \"filterable\": true,  \"sortable\": true,    \"facetable\": false, \"retrievable\": true },\n    { \"name\": \"content_type\",      \"type\": \"Edm.String\",                   \"filterable\": true,  \"searchable\": false, \"sortable\": false, \"facetable\": false, \"retrievable\": true },\n    { \"name\": \"file_size\",         \"type\": \"Edm.Int64\",                    \"filterable\": true,  \"sortable\": false,   \"facetable\": false, \"retrievable\": true },\n    { \"name\": \"created_by\",        \"type\": \"Edm.String\",                   \"filterable\": true,  \"searchable\": false, \"sortable\": false, \"facetable\": false, \"retrievable\": true },\n    { \"name\": \"modified_by\",       \"type\": \"Edm.String\",                   \"filterable\": true,  \"searchable\": false, \"sortable\": false, \"facetable\": false, \"retrievable\": true },\n    { \"name\": \"drive_name\",        \"type\": \"Edm.String\",                   \"filterable\": true,  \"searchable\": false, \"sortable\": false, \"facetable\": false, \"retrievable\": true },\n    { \"name\": \"permission_ids\",    \"type\": \"Collection(Edm.String)\",       \"filterable\": true,  \"searchable\": false, \"facetable\": false, \"retrievable\": true },\n    { \"name\": \"has_image\",         \"type\": \"Edm.Boolean\",                  \"filterable\": true,  \"sortable\": false,   \"facetable\": false, \"retrievable\": true },\n    { \"name\": \"content_path\",      \"type\": \"Edm.String\",                   \"filterable\": false, \"searchable\": false, \"sortable\": false, \"facetable\": false, \"retrievable\": true },\n    {\n      \"name\": \"location_metadata\",\n      \"type\": \"Edm.ComplexType\",\n      \"fields\": [\n        { \"name\": \"page_number\",       \"type\": \"Edm.Int32\",  \"filterable\": true,  \"sortable\": false, \"facetable\": false, \"retrievable\": true },\n        { \"name\": \"bounding_polygons\", \"type\": \"Edm.String\", \"filterable\": false, \"searchable\": false, \"sortable\": false, \"facetable\": false, \"retrievable\": true }\n      ]\n    },\n    {\n      \"name\": \"content_embedding\",\n      \"type\": \"Collection(Edm.Single)\",\n      \"searchable\": true,\n      \"retrievable\": true,\n      \"filterable\": false,\n      \"sortable\": false,\n      \"facetable\": false,\n      \"dimensions\": 1024,\n      \"vectorSearchProfile\": \"sp-vector-profile\"\n    }\n  ],\n  \"vectorSearch\": {\n    \"algorithms\": [\n      { \"name\": \"sp-hnsw\", \"kind\": \"hnsw\" }\n    ],\n    \"profiles\": [\n      {\n        \"name\": \"sp-vector-profile\",\n        \"algorithm\": \"sp-hnsw\",\n        \"vectorizer\": \"sp-aivision-vectorizer\"\n      }\n    ],\n    \"vectorizers\": [\n      {\n        \"name\": \"sp-aivision-vectorizer\",\n        \"kind\": \"aiServicesVision\",\n        \"aiServicesVisionParameters\": {\n          \"resourceUri\": \"__MULTIMODAL_ENDPOINT__\",\n          \"modelVersion\": \"__MULTIMODAL_MODEL_VERSION__\"\n        }\n      }\n    ]\n  },\n  \"semantic\": {\n    \"defaultConfiguration\": \"sp-semantic-config\",\n    \"configurations\": [\n      {\n        \"name\": \"sp-semantic-config\",\n        \"prioritizedFields\": {\n          \"titleField\": { \"fieldName\": \"title\" },\n          \"prioritizedContentFields\": [\n            { \"fieldName\": \"content_text\" }\n          ]\n        }\n      }\n    ]\n  }\n}\n"
   },
   "imports": {
     "microsoftGraphV1_0": {
@@ -369,6 +376,67 @@
         "storageAccount"
       ]
     },
+    "deployerSearchRole": {
+      "type": "Microsoft.Authorization/roleAssignments",
+      "apiVersion": "2022-04-01",
+      "scope": "[resourceId('Microsoft.Search/searchServices', variables('searchServiceName'))]",
+      "name": "[guid(resourceId('Microsoft.Search/searchServices', variables('searchServiceName')), variables('searchServiceContributorRoleId'), resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-deployer-{1}', parameters('baseName'), variables('nameSuffix'))))]",
+      "properties": {
+        "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', variables('searchServiceContributorRoleId'))]",
+        "principalId": "[reference('deployerIdentity').principalId]",
+        "principalType": "ServicePrincipal"
+      },
+      "dependsOn": [
+        "deployerIdentity",
+        "searchService"
+      ]
+    },
+    "createSearchIndex": {
+      "type": "Microsoft.Resources/deploymentScripts",
+      "apiVersion": "2023-08-01",
+      "name": "[format('{0}-create-index', parameters('baseName'))]",
+      "location": "[parameters('location')]",
+      "kind": "AzureCLI",
+      "identity": {
+        "type": "UserAssigned",
+        "userAssignedIdentities": {
+          "[format('{0}', resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-deployer-{1}', parameters('baseName'), variables('nameSuffix'))))]": {}
+        }
+      },
+      "properties": {
+        "azCliVersion": "2.65.0",
+        "timeout": "PT10M",
+        "retentionInterval": "PT1H",
+        "cleanupPreference": "OnSuccess",
+        "environmentVariables": [
+          {
+            "name": "SEARCH_ENDPOINT",
+            "value": "[variables('searchEndpoint')]"
+          },
+          {
+            "name": "INDEX_NAME",
+            "value": "[variables('searchIndexName')]"
+          },
+          {
+            "name": "INDEX_SCHEMA",
+            "value": "[variables('indexSchema')]"
+          },
+          {
+            "name": "MULTIMODAL_ENDPOINT",
+            "value": "[variables('foundryEndpoint')]"
+          },
+          {
+            "name": "MULTIMODAL_MODEL_VERSION",
+            "value": "[variables('multimodalModelVersion')]"
+          }
+        ],
+        "scriptContent": "      set -eu\n      printf '%s' \"$INDEX_SCHEMA\" \\\n        | sed \"s|__MULTIMODAL_ENDPOINT__|$MULTIMODAL_ENDPOINT|g\" \\\n        | sed \"s|__MULTIMODAL_MODEL_VERSION__|$MULTIMODAL_MODEL_VERSION|g\" \\\n        > /tmp/index.json\n      TOKEN=$(az account get-access-token --resource https://search.azure.com/ --query accessToken -o tsv)\n      HTTP=$(curl -sS -o /tmp/resp.json -w \"%{http_code}\" -X PUT \\\n             \"$SEARCH_ENDPOINT/indexes/$INDEX_NAME?api-version=2024-09-01-preview\" \\\n             -H \"Authorization: Bearer $TOKEN\" \\\n             -H \"Content-Type: application/json\" \\\n             --data @/tmp/index.json)\n      echo \"PUT /indexes/$INDEX_NAME returned $HTTP\"\n      cat /tmp/resp.json\n      if [ \"$HTTP\" != \"200\" ] && [ \"$HTTP\" != \"201\" ] && [ \"$HTTP\" != \"204\" ]; then\n        exit 1\n      fi\n    "
+      },
+      "dependsOn": [
+        "deployerIdentity",
+        "deployerSearchRole"
+      ]
+    },
     "publishCode": {
       "type": "Microsoft.Resources/deploymentScripts",
       "apiVersion": "2023-08-01",
@@ -601,12 +669,8 @@
               "value": "[if(variables('extractImages'), 'true', 'false')]"
             },
             {
-              "name": "FORCE_RECREATE_INDEX",
-              "value": "[if(variables('forceRecreateIndex'), 'true', 'false')]"
-            },
-            {
               "name": "API_AUDIENCE",
-              "value": "[if(variables('shouldCreateAppRegistration'), reference('apiApp').appId, variables('suppliedClientId'))]"
+              "value": "[if(parameters('enableSecurityTrimming'), if(variables('shouldCreateAppRegistration'), reference('apiApp').appId, variables('suppliedClientId')), '')]"
             },
             {
               "name": "ALWAYS_ALLOWED_IDS",
@@ -793,13 +857,17 @@
       "type": "string",
       "value": "[variables('keyVaultName')]"
     },
+    "securityTrimmingEnabled": {
+      "type": "bool",
+      "value": "[parameters('enableSecurityTrimming')]"
+    },
     "apiAudience": {
       "type": "string",
-      "value": "[if(variables('shouldCreateAppRegistration'), reference('apiApp').appId, variables('suppliedClientId'))]"
+      "value": "[if(parameters('enableSecurityTrimming'), if(variables('shouldCreateAppRegistration'), reference('apiApp').appId, variables('suppliedClientId')), '')]"
     },
     "apiAppDisplayName": {
       "type": "string",
-      "value": "[if(variables('shouldCreateAppRegistration'), reference('apiApp').displayName, 'pre-created (apiAudience parameter supplied)')]"
+      "value": "[if(variables('shouldCreateAppRegistration'), reference('apiApp').displayName, if(parameters('enableSecurityTrimming'), 'pre-created (apiAudience parameter supplied)', 'security trimming disabled — no app registration'))]"
     }
   }
 }

@@ -151,8 +151,6 @@ class IndexerConfig:
     start_date: datetime | None = None
     function_processing_mode: FunctionProcessingMode = FunctionProcessingMode.QUEUE
     extract_images: bool = True
-    # DESTRUCTIVE one-shot: drops + recreates the AI Search index on next run.
-    force_recreate_index: bool = False
     # Per-file chunk vectorisation concurrency. The ceiling is also bounded by
     # MultimodalEmbeddingsClient's own semaphore (MULTIMODAL_MAX_IN_FLIGHT).
     vectorise_concurrency: int = 8
@@ -283,7 +281,6 @@ def load_config() -> AppConfig:
             start_date=start_date,
             function_processing_mode=fn_mode,
             extract_images=_get_bool("EXTRACT_IMAGES", True),
-            force_recreate_index=_get_bool("FORCE_RECREATE_INDEX", False),
             vectorise_concurrency=int(_get_optional("VECTORISE_CONCURRENCY", "8")),
             root_paths=root_paths,
             reconcile_every_n_runs=int(_get_optional("RECONCILE_EVERY_N_RUNS", "24")),
