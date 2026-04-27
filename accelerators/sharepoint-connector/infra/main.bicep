@@ -390,11 +390,67 @@ resource deployerSearchRole 'Microsoft.Authorization/roleAssignments@2022-04-01'
   }
 }
 
-// Index schema lives in infra/sharepoint-index.json — single source of truth
-// for the index. Two placeholders (__MULTIMODAL_ENDPOINT__ and
-// __MULTIMODAL_MODEL_VERSION__) are substituted by the createSearchIndex
-// deploymentScript at deploy time.
-var indexSchema = loadTextContent('sharepoint-index.json')
+// Index schema lives in infra/sharepoint-index.json — single source of truth.
+// Bicep substitutes the two runtime placeholders (foundry endpoint + model
+// version) at compile time so the script doesn't need a multi-line env var
+// (multi-line env vars caused empty-log container failures earlier).
+var indexSchema = replace(
+  replace(loadTextContent('sharepoint-index.json'), '__MULTIMODAL_ENDPOINT__', foundryEndpoint),
+  '__MULTIMODAL_MODEL_VERSION__',
+  multimodalModelVersion
+)
+
+var createIndexScriptTemplate = '''
+set -eu
+set -o pipefail
+echo "=== createSearchIndex starting ==="
+echo "SEARCH_NAME=$SEARCH_NAME RESOURCE_GROUP=$RESOURCE_GROUP INDEX_NAME=$INDEX_NAME"
+
+cat > /tmp/index.json <<'BICEPJSONEOF'
+__INDEX_SCHEMA_PLACEHOLDER__
+BICEPJSONEOF
+echo "Wrote /tmp/index.json ($(wc -c < /tmp/index.json) bytes)"
+head -c 400 /tmp/index.json; echo
+
+echo "=== Fetching admin key (with RBAC-propagation retries) ==="
+ADMIN_KEY=""
+for i in 1 2 3 4 5 6; do
+  echo "Attempt $i: az search admin-key show --service-name $SEARCH_NAME"
+  if K=$(az search admin-key show \
+            --service-name "$SEARCH_NAME" \
+            --resource-group "$RESOURCE_GROUP" \
+            --query primaryKey -o tsv 2>&1); then
+    if [ -n "$K" ] && [ "${#K}" -gt 20 ]; then
+      ADMIN_KEY="$K"
+      echo "Admin key retrieved on attempt $i (length=${#ADMIN_KEY})"
+      break
+    fi
+  else
+    echo "az returned non-zero: $K"
+  fi
+  echo "Sleeping 20s before retry"
+  sleep 20
+done
+if [ -z "$ADMIN_KEY" ]; then
+  echo "ERROR: failed to fetch admin key after retries" >&2
+  exit 1
+fi
+
+echo "=== PUT $SEARCH_ENDPOINT/indexes/$INDEX_NAME ==="
+HTTP=$(curl -sS -o /tmp/resp.json -w "%{http_code}" -X PUT \
+       "$SEARCH_ENDPOINT/indexes/$INDEX_NAME?api-version=2024-11-01-preview" \
+       -H "api-key: $ADMIN_KEY" \
+       -H "Content-Type: application/json" \
+       --data @/tmp/index.json)
+echo "Returned HTTP $HTTP"
+echo "Response body:"
+cat /tmp/resp.json; echo
+if [ "$HTTP" != "200" ] && [ "$HTTP" != "201" ] && [ "$HTTP" != "204" ]; then
+  echo "ERROR: index creation failed" >&2
+  exit 1
+fi
+echo "Index '$INDEX_NAME' is ready"
+'''
 
 resource createSearchIndex 'Microsoft.Resources/deploymentScripts@2023-08-01' = {
   name: '${baseName}-create-index'
@@ -413,29 +469,11 @@ resource createSearchIndex 'Microsoft.Resources/deploymentScripts@2023-08-01' = 
     cleanupPreference: 'OnSuccess'
     environmentVariables: [
       { name: 'SEARCH_ENDPOINT', value: searchEndpoint }
+      { name: 'SEARCH_NAME', value: searchServiceName }
+      { name: 'RESOURCE_GROUP', value: resourceGroup().name }
       { name: 'INDEX_NAME', value: searchIndexName }
-      { name: 'INDEX_SCHEMA', value: indexSchema }
-      { name: 'MULTIMODAL_ENDPOINT', value: foundryEndpoint }
-      { name: 'MULTIMODAL_MODEL_VERSION', value: multimodalModelVersion }
     ]
-    scriptContent: '''
-      set -eu
-      printf '%s' "$INDEX_SCHEMA" \
-        | sed "s|__MULTIMODAL_ENDPOINT__|$MULTIMODAL_ENDPOINT|g" \
-        | sed "s|__MULTIMODAL_MODEL_VERSION__|$MULTIMODAL_MODEL_VERSION|g" \
-        > /tmp/index.json
-      TOKEN=$(az account get-access-token --resource https://search.azure.com/ --query accessToken -o tsv)
-      HTTP=$(curl -sS -o /tmp/resp.json -w "%{http_code}" -X PUT \
-             "$SEARCH_ENDPOINT/indexes/$INDEX_NAME?api-version=2024-09-01-preview" \
-             -H "Authorization: Bearer $TOKEN" \
-             -H "Content-Type: application/json" \
-             --data @/tmp/index.json)
-      echo "PUT /indexes/$INDEX_NAME returned $HTTP"
-      cat /tmp/resp.json
-      if [ "$HTTP" != "200" ] && [ "$HTTP" != "201" ] && [ "$HTTP" != "204" ]; then
-        exit 1
-      fi
-    '''
+    scriptContent: replace(createIndexScriptTemplate, '__INDEX_SCHEMA_PLACEHOLDER__', indexSchema)
   }
   dependsOn: [
     deployerSearchRole
