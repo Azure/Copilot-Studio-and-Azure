@@ -64,18 +64,15 @@ jobs:
       - name: Install Python dependencies into .python_packages
         # Flex Consumption Python does NOT run `pip install` at startup —
         # the deployment package must already contain all runtime
-        # dependencies under `.python_packages/lib/site-packages/`. Install
-        # them here, targeting Linux (the Flex worker image), so the zip
-        # is self-contained.
+        # dependencies under `.python_packages/lib/site-packages/`.
+        #
+        # The Ubuntu runner's Python 3.11 already matches the Flex
+        # Consumption Python 3.11 worker image (both Linux x86_64), so a
+        # plain `pip install --target` produces directly-compatible
+        # artifacts. No --platform / --only-binary cross-compile flags
+        # needed (and they break on sdist-only packages like `odfpy`).
         run: |
-          pip install \
-            --target=".python_packages/lib/site-packages" \
-            --platform manylinux2014_x86_64 \
-            --python-version 3.11 \
-            --implementation cp \
-            --only-binary=:all: \
-            --upgrade \
-            -r requirements.txt
+          pip install --target=".python_packages/lib/site-packages" --upgrade -r requirements.txt
           echo "--- .python_packages size ---"
           du -sh .python_packages
 
