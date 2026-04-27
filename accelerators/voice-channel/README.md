@@ -14,31 +14,9 @@ with three additions:
 
 ## Solution architecture
 
-The editable source lives in [`images/voice-channel-architecture.drawio`](images/voice-channel-architecture.drawio). Open it at [app.diagrams.net](https://app.diagrams.net) to edit, then export a PNG alongside it.
+![Voice Channel solution architecture](images/voice-channel-solution-architecture.png)
 
-```
-┌─────────────────┐ ┌────────────────┐ ┌────────────────────────┐
-│ Microsoft Teams │ │ M365 Copilot   │ │ Custom Web UI          │
-│ (text + mic)    │ │ (text + mic)   │ │ (Voice Live streaming) │
-└───────┬─────────┘ └───────┬────────┘ └──────────┬─────────────┘
-        │  Azure Bot Service  │                   │  wss → Voice Live
-        └──────────┬──────────┘                   │
-                   ▼                              ▼
-        ┌─────────────────────────────────────────────────┐
-        │  Microsoft Foundry Agent Service — IT Assistant │
-        │  instructions + ask_microsoft_learn_assistant   │
-        │  (OpenAPI tool, Direct Line 3.0)                │
-        └─────────────────────┬───────────────────────────┘
-                              │ HTTPS
-                              ▼
-        ┌─────────────────────────────────────────────────┐
-        │  Copilot Studio — "Microsoft Learn Assistant"   │
-        │  + Microsoft Learn MCP tool                     │
-        └─────────────────────┬───────────────────────────┘
-                              │ streamable HTTP
-                              ▼
-                https://learn.microsoft.com/api/mcp
-```
+The editable source lives in [`images/voice-channel-architecture.drawio`](images/voice-channel-architecture.drawio). Open it at [app.diagrams.net](https://app.diagrams.net) to edit, then re-export the PNG to [`images/voice-channel-solution-architecture.png`](images/voice-channel-solution-architecture.png) so the diagram above stays in sync.
 
 | Surface | Transport | Voice UX |
 |---|---|---|
