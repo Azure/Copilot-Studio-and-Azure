@@ -61,10 +61,28 @@ jobs:
           echo "--- requirements.txt ---"
           cat requirements.txt
 
+      - name: Install Python dependencies into .python_packages
+        # Flex Consumption Python does NOT run `pip install` at startup —
+        # the deployment package must already contain all runtime
+        # dependencies under `.python_packages/lib/site-packages/`. Install
+        # them here, targeting Linux (the Flex worker image), so the zip
+        # is self-contained.
+        run: |
+          pip install \
+            --target=".python_packages/lib/site-packages" \
+            --platform manylinux2014_x86_64 \
+            --python-version 3.11 \
+            --implementation cp \
+            --only-binary=:all: \
+            --upgrade \
+            -r requirements.txt
+          echo "--- .python_packages size ---"
+          du -sh .python_packages
+
       - name: Build deployment zip
         run: |
-          # Exclude everything the function runtime doesn't need. Keeps the
-          # package small (~1 MB vs ~50 MB if we ship the venv).
+          # Include `.python_packages/` (the pre-installed deps) and exclude
+          # everything else the function runtime doesn't need.
           zip -r /tmp/sharepoint-connector.zip . \
             -x "tests/*" \
             -x "**/__pycache__/*" \
