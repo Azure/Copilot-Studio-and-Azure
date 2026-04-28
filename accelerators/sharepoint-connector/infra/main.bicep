@@ -568,6 +568,11 @@ resource functionApp 'Microsoft.Web/sites@2024-04-01' = {
         { name: 'AzureWebJobsStorage__accountName', value: storageAccount.name }
         { name: 'AzureWebJobsStorage__credential', value: 'managedidentity' }
         { name: 'FUNCTIONS_EXTENSION_VERSION', value: '~4' }
+        // Python v2 (decorator-based) programming model — without this the host
+        // falls back to the legacy v1 model that needs a function.json per
+        // function and finds 0 functions in our decorator-only package.
+        { name: 'AzureWebJobsFeatureFlags', value: 'EnableWorkerIndexing' }
+        { name: 'PYTHON_ENABLE_INIT_INDEXING', value: '1' }
         { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', value: appInsights.properties.ConnectionString }
 
         // Connector config
