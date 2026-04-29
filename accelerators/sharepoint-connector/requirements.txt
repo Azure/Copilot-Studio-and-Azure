@@ -6,17 +6,29 @@ anyio==4.12.1
     # via
     #   httpx
     #   openai
+azure-ai-documentintelligence==1.0.2
+    # via sharepoint-connector
 azure-common==1.1.28
     # via azure-search-documents
 azure-core==1.38.2
     # via
+    #   azure-ai-documentintelligence
+    #   azure-data-tables
     #   azure-identity
     #   azure-search-documents
+    #   azure-storage-blob
+    #   azure-storage-queue
+azure-data-tables==12.7.0
+    # via sharepoint-connector
 azure-functions==1.24.0
     # via sharepoint-connector
 azure-identity==1.25.2
     # via sharepoint-connector
 azure-search-documents==11.6.0
+    # via sharepoint-connector
+azure-storage-blob==12.28.0
+    # via sharepoint-connector
+azure-storage-queue==12.15.0
     # via sharepoint-connector
 beautifulsoup4==4.13.5
     # via

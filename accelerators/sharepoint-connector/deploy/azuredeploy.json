@@ -6,7 +6,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.42.1.51946",
-      "templateHash": "5085838534659513121"
+      "templateHash": "517038233000661893"
     }
   },
   "parameters": {
@@ -94,11 +94,11 @@
     "searchServiceContributorRoleId": "7ca78c08-252a-4471-8644-bb5ff32d4ba0",
     "cognitiveServicesUserRoleId": "a97b65f3-24c7-4388-baec-2e87135dc908",
     "storageBlobDataOwnerRoleId": "b7e6dc6d-f1e8-4753-8033-0f276bb0955b",
-    "storageBlobDataContributorRoleId": "ba92f5b4-2d11-453d-a403-e96b0029c9fe",
     "storageAccountContributorRoleId": "17d1049b-9a84-46fb-8f53-869881c3d3ab",
     "storageQueueDataContributorRoleId": "974c5e8b-45b9-4653-ba55-5f855dd0fb88",
     "storageTableDataContributorRoleId": "0a9a7e1f-b9d0-4cc4-a60d-0319b160aaa3",
     "keyVaultSecretsUserRoleId": "4633458b-17de-408a-b874-0445c86b69e6",
+    "websiteContributorRoleId": "de139f84-1756-47ae-9be6-808fbbe84772",
     "apiAppUniqueName": "[format('sharepoint-connector-api-{0}', variables('nameSuffix'))]",
     "accessAsUserScopeId": "[guid(resourceGroup().id, 'access_as_user')]",
     "graphAppId": "00000003-0000-0000-c000-000000000000",
@@ -260,12 +260,20 @@
       "sku": {
         "name": "[variables('searchSku')]"
       },
+      "identity": {
+        "type": "SystemAssigned"
+      },
       "properties": {
         "replicaCount": 1,
         "partitionCount": 1,
         "hostingMode": "default",
         "publicNetworkAccess": "enabled",
-        "semanticSearch": "standard"
+        "semanticSearch": "standard",
+        "authOptions": {
+          "aadOrApiKey": {
+            "aadAuthFailureMode": "http403"
+          }
+        }
       }
     },
     "foundryAccount": {
@@ -363,21 +371,6 @@
       "name": "[format('{0}-deployer-{1}', parameters('baseName'), variables('nameSuffix'))]",
       "location": "[parameters('location')]"
     },
-    "deployerStorageRole": {
-      "type": "Microsoft.Authorization/roleAssignments",
-      "apiVersion": "2022-04-01",
-      "scope": "[resourceId('Microsoft.Storage/storageAccounts', variables('storageName'))]",
-      "name": "[guid(resourceId('Microsoft.Storage/storageAccounts', variables('storageName')), variables('storageBlobDataContributorRoleId'), resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-deployer-{1}', parameters('baseName'), variables('nameSuffix'))))]",
-      "properties": {
-        "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', variables('storageBlobDataContributorRoleId'))]",
-        "principalId": "[reference('deployerIdentity').principalId]",
-        "principalType": "ServicePrincipal"
-      },
-      "dependsOn": [
-        "deployerIdentity",
-        "storageAccount"
-      ]
-    },
     "deployerSearchRole": {
       "type": "Microsoft.Authorization/roleAssignments",
       "apiVersion": "2022-04-01",
@@ -435,50 +428,6 @@
         "deployerSearchRole"
       ]
     },
-    "publishCode": {
-      "type": "Microsoft.Resources/deploymentScripts",
-      "apiVersion": "2023-08-01",
-      "name": "[format('{0}-publish-code', parameters('baseName'))]",
-      "location": "[parameters('location')]",
-      "kind": "AzureCLI",
-      "identity": {
-        "type": "UserAssigned",
-        "userAssignedIdentities": {
-          "[format('{0}', resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-deployer-{1}', parameters('baseName'), variables('nameSuffix'))))]": {}
-        }
-      },
-      "properties": {
-        "azCliVersion": "2.65.0",
-        "timeout": "PT10M",
-        "retentionInterval": "PT1H",
-        "cleanupPreference": "OnSuccess",
-        "environmentVariables": [
-          {
-            "name": "STORAGE_ACCOUNT",
-            "value": "[variables('storageName')]"
-          },
-          {
-            "name": "CONTAINER",
-            "value": "[variables('deployContainerName')]"
-          },
-          {
-            "name": "PACKAGE_URL",
-            "value": "[variables('packageReleaseUrl')]"
-          },
-          {
-            "name": "PACKAGE_BLOB",
-            "value": "function-package.zip"
-          }
-        ],
-        "scriptContent": "      set -eu\n      TEMP=$(mktemp -d)\n      cd \"$TEMP\"\n      echo \"Downloading $PACKAGE_URL\"\n      curl -sSL --fail -o package.zip \"$PACKAGE_URL\"\n      echo \"Uploading to $STORAGE_ACCOUNT/$CONTAINER/$PACKAGE_BLOB\"\n      az storage blob upload \\\n        --account-name \"$STORAGE_ACCOUNT\" \\\n        --container-name \"$CONTAINER\" \\\n        --name \"$PACKAGE_BLOB\" \\\n        --file package.zip \\\n        --auth-mode login \\\n        --overwrite\n      echo \"Upload complete.\"\n    "
-      },
-      "dependsOn": [
-        "deployContainer",
-        "deployerIdentity",
-        "deployerStorageRole",
-        "storageAccount"
-      ]
-    },
     "flexPlan": {
       "type": "Microsoft.Web/serverfarms",
       "apiVersion": "2024-04-01",
@@ -533,6 +482,18 @@
             {
               "name": "AzureWebJobsStorage__credential",
               "value": "managedidentity"
+            },
+            {
+              "name": "AzureWebJobsStorage__queueServiceUri",
+              "value": "[reference('storageAccount').primaryEndpoints.queue]"
+            },
+            {
+              "name": "AzureWebJobsStorage__blobServiceUri",
+              "value": "[reference('storageAccount').primaryEndpoints.blob]"
+            },
+            {
+              "name": "AzureWebJobsStorage__tableServiceUri",
+              "value": "[reference('storageAccount').primaryEndpoints.table]"
             },
             {
               "name": "FUNCTIONS_EXTENSION_VERSION",
@@ -694,7 +655,6 @@
         "appInsights",
         "flexPlan",
         "keyVault",
-        "publishCode",
         "storageAccount"
       ]
     },
@@ -741,6 +701,21 @@
       "dependsOn": [
         "foundryAccount",
         "functionApp"
+      ]
+    },
+    "searchToFoundryAssignment": {
+      "type": "Microsoft.Authorization/roleAssignments",
+      "apiVersion": "2022-04-01",
+      "scope": "[resourceId('Microsoft.CognitiveServices/accounts', variables('foundryAccountName'))]",
+      "name": "[guid(resourceId('Microsoft.CognitiveServices/accounts', variables('foundryAccountName')), variables('cognitiveServicesUserRoleId'), resourceId('Microsoft.Search/searchServices', variables('searchServiceName')))]",
+      "properties": {
+        "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', variables('cognitiveServicesUserRoleId'))]",
+        "principalId": "[reference('searchService', '2024-06-01-preview', 'full').identity.principalId]",
+        "principalType": "ServicePrincipal"
+      },
+      "dependsOn": [
+        "foundryAccount",
+        "searchService"
       ]
     },
     "docIntelAssignment": {
@@ -831,6 +806,56 @@
       "dependsOn": [
         "functionApp",
         "keyVault"
+      ]
+    },
+    "deployerWebsiteRole": {
+      "type": "Microsoft.Authorization/roleAssignments",
+      "apiVersion": "2022-04-01",
+      "scope": "[resourceId('Microsoft.Web/sites', variables('functionAppName'))]",
+      "name": "[guid(resourceId('Microsoft.Web/sites', variables('functionAppName')), variables('websiteContributorRoleId'), resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-deployer-{1}', parameters('baseName'), variables('nameSuffix'))))]",
+      "properties": {
+        "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', variables('websiteContributorRoleId'))]",
+        "principalId": "[reference('deployerIdentity').principalId]",
+        "principalType": "ServicePrincipal"
+      },
+      "dependsOn": [
+        "deployerIdentity",
+        "functionApp"
+      ]
+    },
+    "publishCode": {
+      "type": "Microsoft.Resources/deploymentScripts",
+      "apiVersion": "2023-08-01",
+      "name": "[format('{0}-publish-code', parameters('baseName'))]",
+      "location": "[parameters('location')]",
+      "kind": "AzureCLI",
+      "identity": {
+        "type": "UserAssigned",
+        "userAssignedIdentities": {
+          "[format('{0}', resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-deployer-{1}', parameters('baseName'), variables('nameSuffix'))))]": {}
+        }
+      },
+      "properties": {
+        "azCliVersion": "2.65.0",
+        "timeout": "PT15M",
+        "retentionInterval": "PT1H",
+        "cleanupPreference": "OnSuccess",
+        "environmentVariables": [
+          {
+            "name": "PACKAGE_URL",
+            "value": "[variables('packageReleaseUrl')]"
+          },
+          {
+            "name": "FUNCTION_APP_HOSTNAME",
+            "value": "[format('{0}.azurewebsites.net', variables('functionAppName'))]"
+          }
+        ],
+        "scriptContent": "      set -eu\n      set -o pipefail\n\n      echo \"=== Downloading package zip from $PACKAGE_URL ===\"\n      curl -sSL --fail -o /tmp/package.zip \"$PACKAGE_URL\"\n      SIZE=$(stat -c%s /tmp/package.zip)\n      echo \"Downloaded $SIZE bytes\"\n\n      echo \"=== Acquiring management plane bearer token ===\"\n      TOKEN=$(az account get-access-token --resource https://management.azure.com --query accessToken -o tsv)\n\n      echo \"=== POST https://$FUNCTION_APP_HOSTNAME/api/publish ===\"\n      # Retry loop: the publish endpoint can return transient 5xx during the\n      # first ~60s while the Function App is still finishing its initial\n      # provisioning handshake. 5 attempts, 20s apart.\n      HTTP=\"\"\n      for i in 1 2 3 4 5; do\n        echo \"Attempt $i\"\n        HTTP=$(curl -sS -o /tmp/resp.txt -w \"%{http_code}\" \\\n               -X POST \"https://$FUNCTION_APP_HOSTNAME/api/publish\" \\\n               -H \"Authorization: Bearer $TOKEN\" \\\n               -H \"Content-Type: application/zip\" \\\n               --data-binary @/tmp/package.zip || echo \"000\")\n        echo \"HTTP $HTTP\"\n        if [ \"$HTTP\" = \"200\" ] || [ \"$HTTP\" = \"202\" ]; then\n          break\n        fi\n        echo \"Response body:\"; cat /tmp/resp.txt; echo\n        echo \"Sleeping 20s before retry\"\n        sleep 20\n      done\n\n      if [ \"$HTTP\" != \"200\" ] && [ \"$HTTP\" != \"202\" ]; then\n        echo \"ERROR: deploy failed (final HTTP $HTTP)\" >&2\n        exit 1\n      fi\n      echo \"Package accepted by $FUNCTION_APP_HOSTNAME — Flex will recreate workers and sync triggers\"\n    "
+      },
+      "dependsOn": [
+        "deployerIdentity",
+        "deployerWebsiteRole",
+        "functionApp"
       ]
     }
   },

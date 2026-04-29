@@ -125,11 +125,11 @@ var searchDataContributorRoleId = '8ebe5a00-799e-43f5-93ac-243d3dce84a7'
 var searchServiceContributorRoleId = '7ca78c08-252a-4471-8644-bb5ff32d4ba0'
 var cognitiveServicesUserRoleId = 'a97b65f3-24c7-4388-baec-2e87135dc908'
 var storageBlobDataOwnerRoleId = 'b7e6dc6d-f1e8-4753-8033-0f276bb0955b'
-var storageBlobDataContributorRoleId = 'ba92f5b4-2d11-453d-a403-e96b0029c9fe'
 var storageAccountContributorRoleId = '17d1049b-9a84-46fb-8f53-869881c3d3ab'
 var storageQueueDataContributorRoleId = '974c5e8b-45b9-4653-ba55-5f855dd0fb88'
 var storageTableDataContributorRoleId = '0a9a7e1f-b9d0-4cc4-a60d-0319b160aaa3'
 var keyVaultSecretsUserRoleId = '4633458b-17de-408a-b874-0445c86b69e6'
+var websiteContributorRoleId = 'de139f84-1756-47ae-9be6-808fbbe84772'
 
 // ============================================================================
 // Storage
@@ -239,12 +239,26 @@ resource searchService 'Microsoft.Search/searchServices@2024-06-01-preview' = {
   name: searchServiceName
   location: location
   sku: { name: searchSku }
+  // System-assigned MI so the registered aiServicesVision vectorizer can
+  // authenticate to the Foundry endpoint at QUERY TIME (when Copilot Studio
+  // or Search Explorer submits text and AI Search vectorizes it server-side).
+  identity: {
+    type: 'SystemAssigned'
+  }
   properties: {
     replicaCount: 1
     partitionCount: 1
     hostingMode: 'default'
     publicNetworkAccess: 'enabled'
     semanticSearch: 'standard'
+    // Accept BOTH AAD bearer tokens AND API keys. Without this, the data-plane
+    // rejects AAD tokens with 403 even when the caller has the right RBAC role
+    // — which silently breaks the worker's upload to the index.
+    authOptions: {
+      aadOrApiKey: {
+        aadAuthFailureMode: 'http403'
+      }
+    }
   }
 }
 
@@ -370,16 +384,6 @@ resource deployerIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023
   location: location
 }
 
-resource deployerStorageRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(storageAccount.id, storageBlobDataContributorRoleId, deployerIdentity.id)
-  scope: storageAccount
-  properties: {
-    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', storageBlobDataContributorRoleId)
-    principalId: deployerIdentity.properties.principalId
-    principalType: 'ServicePrincipal'
-  }
-}
-
 resource deployerSearchRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
   name: guid(searchService.id, searchServiceContributorRoleId, deployerIdentity.id)
   scope: searchService
@@ -480,50 +484,6 @@ resource createSearchIndex 'Microsoft.Resources/deploymentScripts@2023-08-01' = 
   ]
 }
 
-resource publishCode 'Microsoft.Resources/deploymentScripts@2023-08-01' = {
-  name: '${baseName}-publish-code'
-  location: location
-  kind: 'AzureCLI'
-  identity: {
-    type: 'UserAssigned'
-    userAssignedIdentities: {
-      '${deployerIdentity.id}': {}
-    }
-  }
-  properties: {
-    azCliVersion: '2.65.0'
-    timeout: 'PT10M'
-    retentionInterval: 'PT1H'
-    cleanupPreference: 'OnSuccess'
-    environmentVariables: [
-      { name: 'STORAGE_ACCOUNT', value: storageAccount.name }
-      { name: 'CONTAINER', value: deployContainerName }
-      { name: 'PACKAGE_URL', value: packageReleaseUrl }
-      { name: 'PACKAGE_BLOB', value: 'function-package.zip' }
-    ]
-    scriptContent: '''
-      set -eu
-      TEMP=$(mktemp -d)
-      cd "$TEMP"
-      echo "Downloading $PACKAGE_URL"
-      curl -sSL --fail -o package.zip "$PACKAGE_URL"
-      echo "Uploading to $STORAGE_ACCOUNT/$CONTAINER/$PACKAGE_BLOB"
-      az storage blob upload \
-        --account-name "$STORAGE_ACCOUNT" \
-        --container-name "$CONTAINER" \
-        --name "$PACKAGE_BLOB" \
-        --file package.zip \
-        --auth-mode login \
-        --overwrite
-      echo "Upload complete."
-    '''
-  }
-  dependsOn: [
-    deployContainer
-    deployerStorageRole
-  ]
-}
-
 // ============================================================================
 // Flex Consumption plan + Function App
 // ============================================================================
@@ -541,11 +501,6 @@ resource functionApp 'Microsoft.Web/sites@2024-04-01' = {
   location: location
   kind: 'functionapp,linux'
   identity: { type: 'SystemAssigned' }
-  dependsOn: [
-    // Ensure the code package is in the container before the Function App
-    // tries to start; otherwise the first-startup pull would race.
-    publishCode
-  ]
   properties: {
     serverFarmId: flexPlan.id
     httpsOnly: true
@@ -567,6 +522,13 @@ resource functionApp 'Microsoft.Web/sites@2024-04-01' = {
       appSettings: [
         { name: 'AzureWebJobsStorage__accountName', value: storageAccount.name }
         { name: 'AzureWebJobsStorage__credential', value: 'managedidentity' }
+        // Explicit service URIs are required for Flex Consumption's scale
+        // controller to poll the queue/table endpoints when AzureWebJobsStorage
+        // uses MI auth — without these the scale controller never discovers
+        // queue depth and queue-trigger functions stay idle.
+        { name: 'AzureWebJobsStorage__queueServiceUri', value: storageAccount.properties.primaryEndpoints.queue }
+        { name: 'AzureWebJobsStorage__blobServiceUri', value: storageAccount.properties.primaryEndpoints.blob }
+        { name: 'AzureWebJobsStorage__tableServiceUri', value: storageAccount.properties.primaryEndpoints.table }
         { name: 'FUNCTIONS_EXTENSION_VERSION', value: '~4' }
         // Python v2 (decorator-based) programming model — without this the host
         // falls back to the legacy v1 model that needs a function.json per
@@ -655,13 +617,26 @@ resource searchServiceContributorAssignment 'Microsoft.Authorization/roleAssignm
   }
 }
 
-// Foundry / AI Services (Vision multimodal)
+// Foundry / AI Services (Vision multimodal) — Function App's MI for indexing-time
+// embeddings, AND the Search service's MI for query-time vectorization (the
+// registered aiServicesVision vectorizer on the index calls Foundry as the
+// search service's MI when Copilot Studio submits text-only queries).
 resource foundryAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
   name: guid(foundryAccount.id, cognitiveServicesUserRoleId, functionApp.id)
   scope: foundryAccount
   properties: {
     roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', cognitiveServicesUserRoleId)
     principalId: functionApp.identity.principalId
+    principalType: 'ServicePrincipal'
+  }
+}
+
+resource searchToFoundryAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(foundryAccount.id, cognitiveServicesUserRoleId, searchService.id)
+  scope: foundryAccount
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', cognitiveServicesUserRoleId)
+    principalId: searchService.identity.principalId
     principalType: 'ServicePrincipal'
   }
 }
@@ -727,6 +702,97 @@ resource keyVaultSecretsUserAssignment 'Microsoft.Authorization/roleAssignments@
     principalId: functionApp.identity.principalId
     principalType: 'ServicePrincipal'
   }
+}
+
+// ============================================================================
+// One-shot code deploy via Flex Consumption's /api/publish endpoint.
+//
+// Why /api/publish (and not raw blob upload to deployment.storage)?
+//   On Flex Consumption, the deployment.storage container is a *cache* the
+//   runtime reads on first provisioning / scale-out. Writing the zip there
+//   bypasses the publish-notification mechanism that signals the runtime to
+//   recreate workers and sync triggers. The result: the package sits in
+//   storage but the runtime never reloads, and the host reports `0 functions`.
+//   `/api/publish` is the same path `func azure functionapp publish` and the
+//   VS Code Azure Functions extension use; it stages the zip AND notifies
+//   the runtime atomically.
+//
+// The deployerIdentity needs `Website Contributor` on the Function App so
+// it can call /api/publish (Microsoft.Web/sites/publish/action).
+// ============================================================================
+
+resource deployerWebsiteRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(functionApp.id, websiteContributorRoleId, deployerIdentity.id)
+  scope: functionApp
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', websiteContributorRoleId)
+    principalId: deployerIdentity.properties.principalId
+    principalType: 'ServicePrincipal'
+  }
+}
+
+resource publishCode 'Microsoft.Resources/deploymentScripts@2023-08-01' = {
+  name: '${baseName}-publish-code'
+  location: location
+  kind: 'AzureCLI'
+  identity: {
+    type: 'UserAssigned'
+    userAssignedIdentities: {
+      '${deployerIdentity.id}': {}
+    }
+  }
+  properties: {
+    azCliVersion: '2.65.0'
+    timeout: 'PT15M'
+    retentionInterval: 'PT1H'
+    cleanupPreference: 'OnSuccess'
+    environmentVariables: [
+      { name: 'PACKAGE_URL', value: packageReleaseUrl }
+      { name: 'FUNCTION_APP_HOSTNAME', value: '${functionApp.name}.azurewebsites.net' }
+    ]
+    scriptContent: '''
+      set -eu
+      set -o pipefail
+
+      echo "=== Downloading package zip from $PACKAGE_URL ==="
+      curl -sSL --fail -o /tmp/package.zip "$PACKAGE_URL"
+      SIZE=$(stat -c%s /tmp/package.zip)
+      echo "Downloaded $SIZE bytes"
+
+      echo "=== Acquiring management plane bearer token ==="
+      TOKEN=$(az account get-access-token --resource https://management.azure.com --query accessToken -o tsv)
+
+      echo "=== POST https://$FUNCTION_APP_HOSTNAME/api/publish ==="
+      # Retry loop: the publish endpoint can return transient 5xx during the
+      # first ~60s while the Function App is still finishing its initial
+      # provisioning handshake. 5 attempts, 20s apart.
+      HTTP=""
+      for i in 1 2 3 4 5; do
+        echo "Attempt $i"
+        HTTP=$(curl -sS -o /tmp/resp.txt -w "%{http_code}" \
+               -X POST "https://$FUNCTION_APP_HOSTNAME/api/publish" \
+               -H "Authorization: Bearer $TOKEN" \
+               -H "Content-Type: application/zip" \
+               --data-binary @/tmp/package.zip || echo "000")
+        echo "HTTP $HTTP"
+        if [ "$HTTP" = "200" ] || [ "$HTTP" = "202" ]; then
+          break
+        fi
+        echo "Response body:"; cat /tmp/resp.txt; echo
+        echo "Sleeping 20s before retry"
+        sleep 20
+      done
+
+      if [ "$HTTP" != "200" ] && [ "$HTTP" != "202" ]; then
+        echo "ERROR: deploy failed (final HTTP $HTTP)" >&2
+        exit 1
+      fi
+      echo "Package accepted by $FUNCTION_APP_HOSTNAME — Flex will recreate workers and sync triggers"
+    '''
+  }
+  dependsOn: [
+    deployerWebsiteRole
+  ]
 }
 
 // ============================================================================
