@@ -743,9 +743,11 @@ resource publishCode 'Microsoft.Resources/deploymentScripts@2023-08-01' = {
   }
   properties: {
     azCliVersion: '2.65.0'
-    timeout: 'PT15M'
+    timeout: 'PT30M'
     retentionInterval: 'PT1H'
-    cleanupPreference: 'OnSuccess'
+    // Keep the script container around on failure so logs are recoverable
+    // via `az deployment-scripts show-log` instead of being purged with the resource.
+    cleanupPreference: 'OnExpiration'
     environmentVariables: [
       { name: 'PACKAGE_URL', value: packageReleaseUrl }
       { name: 'FUNCTION_APP_HOSTNAME', value: '${functionApp.name}.azurewebsites.net' }
@@ -762,12 +764,36 @@ resource publishCode 'Microsoft.Resources/deploymentScripts@2023-08-01' = {
       echo "=== Acquiring management plane bearer token ==="
       TOKEN=$(az account get-access-token --resource https://management.azure.com --query accessToken -o tsv)
 
+      # ----------------------------------------------------------------
+      # Wait for the Flex Consumption front-end to be reachable. Flex
+      # apps return HTTP 404 from /api/publish (NOT 5xx) until the host
+      # has finished its first cold-start, so we poll the root URL
+      # until any status < 500 comes back. Up to ~5 minutes.
+      # ----------------------------------------------------------------
+      echo "=== Waiting for https://$FUNCTION_APP_HOSTNAME/ to come up ==="
+      READY=""
+      for i in $(seq 1 30); do
+        PROBE=$(curl -sS -o /dev/null -w "%{http_code}" --max-time 10 "https://$FUNCTION_APP_HOSTNAME/" || echo "000")
+        echo "Probe $i: HTTP $PROBE"
+        # Anything that is not a network/5xx error means the front-end is serving.
+        if [ "$PROBE" != "000" ] && [ "$PROBE" -lt 500 ]; then
+          READY="yes"
+          break
+        fi
+        sleep 10
+      done
+      if [ -z "$READY" ]; then
+        echo "WARNING: front-end never responded < 500; will still try /api/publish"
+      fi
+
       echo "=== POST https://$FUNCTION_APP_HOSTNAME/api/publish ==="
-      # Retry loop: the publish endpoint can return transient 5xx during the
-      # first ~60s while the Function App is still finishing its initial
-      # provisioning handshake. 5 attempts, 20s apart.
+      # Retry loop. On Flex Consumption the publish endpoint can return:
+      #   * 404 while the host is still finishing first-time provisioning
+      #     (this is NOT a hard failure — the route literally isn't wired yet).
+      #   * 5xx during transient platform hiccups.
+      # Treat both as retryable. 10 attempts, 30s apart (~5 minutes).
       HTTP=""
-      for i in 1 2 3 4 5; do
+      for i in $(seq 1 10); do
         echo "Attempt $i"
         HTTP=$(curl -sS -o /tmp/resp.txt -w "%{http_code}" \
                -X POST "https://$FUNCTION_APP_HOSTNAME/api/publish" \
@@ -779,12 +805,18 @@ resource publishCode 'Microsoft.Resources/deploymentScripts@2023-08-01' = {
           break
         fi
         echo "Response body:"; cat /tmp/resp.txt; echo
-        echo "Sleeping 20s before retry"
-        sleep 20
+        # 401/403 are auth issues — retrying won't help, fail fast.
+        if [ "$HTTP" = "401" ] || [ "$HTTP" = "403" ]; then
+          echo "ERROR: authentication failed (HTTP $HTTP). The deployer MI is missing 'Website Contributor' on the Function App, or the bearer-token audience is wrong." >&2
+          exit 1
+        fi
+        echo "Sleeping 30s before retry"
+        sleep 30
       done
 
       if [ "$HTTP" != "200" ] && [ "$HTTP" != "202" ]; then
-        echo "ERROR: deploy failed (final HTTP $HTTP)" >&2
+        echo "ERROR: deploy failed (final HTTP $HTTP). The Flex Consumption /api/publish endpoint never accepted the package." >&2
+        echo "Manual fallback: run 'func azure functionapp publish <function-app-name> --python --build remote' from accelerators/sharepoint-connector. See README S1." >&2
         exit 1
       fi
       echo "Package accepted by $FUNCTION_APP_HOSTNAME — Flex will recreate workers and sync triggers"
