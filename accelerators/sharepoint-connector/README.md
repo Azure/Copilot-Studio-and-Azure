@@ -80,10 +80,9 @@ Everything below is needed for the **default deployment** (Copilot Studio querie
 **You provide:**
 
 - A **SharePoint Online site** with the content you want indexed.
-- An **Azure subscription** where you hold **Owner** (or *Contributor + User Access Administrator*) on the target resource group — the template assigns RBAC roles on the resources it creates.
 - A **SharePoint Administrator** (or Global Administrator) account to run the `Sites.Selected` per-site grant once after deployment.
+- An **Azure subscription** where you hold **Owner** (or *Contributor + User Access Administrator*) on the target resource group — the template assigns RBAC roles on the resources it creates.
 - A **Copilot Studio** environment with the *environment maker* role to add the AI Search index as a Knowledge Source on your agent.
-- An **Application Registration** that will used to provide access for Azure Function to SharePoint
 
 **Workstation tools:**
 
@@ -354,7 +353,7 @@ This section is an **opt-in walkthrough** for adding that feature on top of the 
 
 In addition to the default-deployment [Prerequisites](#prerequisites):
 
-- **Application Administrator** Entra role (or any role that includes `Application.ReadWrite.OwnedBy` on Graph) — the template registers a new Entra app via the Microsoft Graph Bicep extension. Alternative: ask an admin to pre-create the app via [`infra/create-api-app-registration.ps1`](infra/create-api-app-registration.ps1) and pass the resulting clientId as `apiAudience`.
+- **Application Administrator** Entra role (or any role that includes `Application.ReadWrite.OwnedBy` on Graph) — the template registers a new Entra app via the Microsoft Graph Bicep extension. Alternative: ask an admin to pre-create the app via [`infra/create-api-app-registration.ps1`](infra/create-api-app-registration.ps1) or using Azure Portal and pass the resulting clientId as `apiAudience`.
 - **Cloud Application Administrator** or **Global Administrator** — one-shot grant of the `GroupMember.Read.All` Application permission to the Function's managed identity.
 - **Copilot Studio environment maker** role — creating the Power Platform connection and importing the topic.
 
