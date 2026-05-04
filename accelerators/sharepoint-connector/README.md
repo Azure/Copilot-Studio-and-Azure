@@ -71,7 +71,9 @@ Editable source: [images/sharepoint-connector-architecture.drawio](images/sharep
 
 ### Video Walkthrough
 
-A ~15 minute end-to-end walkthrough — architecture, deployment, post-deployment configuration, and a smoke test against a real SharePoint site — script in [video-talk-script.md](video-talk-script.md). Recording coming soon; in the meantime, the script is complete enough to self-serve.
+A ~9 minute end-to-end walkthrough — architecture, deployment, post-deployment configuration, and a smoke test against a real SharePoint site. 
+
+https://github.com/user-attachments/assets/bd42ea55-6cf8-4e6d-99e1-8a5eb33a6fd4
 
 ### Prerequisites
 
