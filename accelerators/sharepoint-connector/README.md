@@ -114,27 +114,62 @@ Handled by the template itself:
 
 #### Automated Deployment
 
-[![Deploy to Azure](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2Fgokseloral%2FCopilot-Studio-and-Azure%2Fmain%2Faccelerators%2Fsharepoint-connector%2Fdeploy%2Fazuredeploy.json)
+[![Deploy to Azure](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2FAzure%2FCopilot-Studio-and-Azure%2Fmain%2Faccelerators%2Fsharepoint-connector%2Fdeploy%2Fazuredeploy.json)
 
 Clicking the button opens the Azure portal's custom-deployment form. Fill in the two required values (`baseName`, `sharePointSiteUrl`) — leave the rest at their defaults. The template provisions **everything** — Storage Account (+ queue / table / containers), Log Analytics + App Insights, Azure AI Search (Basic), Microsoft Foundry / Azure AI Services multi-service (hosts Vision multimodal), Document Intelligence (Layout), Key Vault, Flex Consumption plan + Function App, and every RBAC assignment on the Function's managed identity. It also **pulls the latest CI-built function-app package** from GitHub Releases (`sharepoint-connector-latest`) via an ARM `deploymentScript` and writes it to the Function App's storage container — so the code is already running when the deployment finishes. No `func publish` step.
 
-After the ARM deployment succeeds, two manual steps remain — both can be completed by an admin in under 10 minutes:
+After the ARM deployment succeeds, four manual steps remain — all can be completed by an admin in under 15 minutes. Steps 1, 2 and 3 are **all required** for the Function App's managed identity to actually read your SharePoint site AND download document content (skipping any one yields a `401` or `403` from Microsoft Graph at indexer-run time — see Troubleshooting **S6**).
 
-1. **Grant Sites.Selected on the target site** (least privilege — *strongly recommended*). Requires SharePoint Administrator or Global Administrator. The script uses the Microsoft Graph PowerShell SDK because the per-site grant (`POST /sites/{id}/permissions`) needs the `Sites.FullControl.All` delegated scope, which the Azure CLI's first-party token does not carry.
+> **One-time pre-requisite for steps 1, 2 and 3** — install [PowerShell 7+](https://learn.microsoft.com/powershell/scripting/install/installing-powershell-on-windows). The Microsoft Graph PowerShell SDK these scripts use **does not work on Windows PowerShell 5.x**.
+> ```powershell
+> winget install --id Microsoft.PowerShell --source winget
+> ```
+> Open a `pwsh` window (not `powershell`) for the commands below. On first run each script auto-installs `Microsoft.Graph.Authentication` + `Microsoft.Graph.Applications` in the CurrentUser scope (~30 s, ~25 MB) and prompts you to consent to the required Graph scopes in the browser; re-runs reuse the cached token.
 
-   **Prerequisites** — install [PowerShell 7+](https://learn.microsoft.com/powershell/scripting/install/installing-powershell-on-windows) (the Graph SDK requires it; Windows PowerShell 5.x will not work):
+1. **Grant `Sites.Selected` tenant-level Graph permission to the Function's managed identity.** Without this the MI cannot call any `/sites/...` endpoint on Microsoft Graph (every call returns `401 Unauthorized`). This is a **tenant-level Graph application-permission assignment** to the MI's enterprise application — it does NOT yet pick which SharePoint site is reachable; that's step 2.
+
+   **Who can run this:** the signed-in user must hold one of:
+   - **Cloud Application Administrator** (recommended — least privilege), **or**
+   - **Privileged Role Administrator**, **or**
+   - **Global Administrator**.
+
+   The role is needed because the script calls `New-MgServicePrincipalAppRoleAssignment`, which requires the delegated Graph scope `AppRoleAssignment.ReadWrite.All`.
+
    ```powershell
-   winget install --id Microsoft.PowerShell --source winget
+   .\infra\grant-graph-permission.ps1 `
+       -FunctionAppName "<function-app-name>" `
+       -Permission "Sites.Selected"
    ```
-   Then open a `pwsh` window (not `powershell`) and run:
+
+2. **Grant the Function's MI READ access to your specific SharePoint site.** Whitelists the one site the indexer is allowed to see (least-privilege per-site grant — the `Sites.Selected` model). Required even after step 1 — without it the MI gets `403 Forbidden` instead of `401`.
+
+   **Who can run this:** the signed-in user must hold one of:
+   - **SharePoint Administrator** (recommended — least privilege), **or**
+   - **Global Administrator**.
+
+   The role is needed because the script calls `POST /sites/{id}/permissions`, which requires the delegated Graph scope `Sites.FullControl.All` — a scope the Azure CLI's first-party token does not carry, hence the dedicated Microsoft Graph PowerShell SDK script.
+
    ```powershell
    .\infra\grant-site-permission.ps1 `
        -SiteUrl "https://contoso.sharepoint.com/sites/YourSite" `
        -FunctionAppName "<function-app-name>"
    ```
-   On first run the script auto-installs `Microsoft.Graph.Authentication` + `Microsoft.Graph.Applications` in the CurrentUser scope (~30 s, ~25 MB) and prompts you to consent to the required Graph scopes in the browser. Re-runs reuse the cached token.
 
-2. **Add Azure AI Search as a Knowledge Source on your Copilot Studio agent.** Built-in connector — no Entra app registration, no Power Platform connection, no topic YAML to import. The Bicep deployment provisioned the index schema before exiting, so Copilot Studio's wizard sees the vector index immediately. Requires the Copilot Studio environment maker role.
+   > **Tip:** if the same admin holds both Cloud Application Administrator AND SharePoint Administrator, run steps 1 and 2 back-to-back in the same `pwsh` session — the cached Graph token will be reused for the second `Connect-MgGraph` call (it'll just request the additional scope incrementally, no second browser sign-in needed).
+
+3. **Grant the Function's MI `Files.Read.All` Graph application permission.** Required for the worker's *file-content download* path (`GET /drives/{id}/items/{id}/content`). The `Sites.Selected` + per-site grant from steps 1 and 2 covers site/drive *enumeration*, but content downloads on Microsoft Graph are gated by a separate authorization check that — in many tenants, especially with Conditional Access or app-protection policies enabled — does not consistently honour `Sites.Selected` for managed identities. Symptom if skipped: dispatcher succeeds, but every worker logs `Download transient error: Client error '401 Unauthorized'` against `/drives/.../items/.../content` and files never land in the index.
+
+   **Who can run this:** same role as step 1 — **Cloud Application Administrator** (recommended), **Privileged Role Administrator**, or **Global Administrator**.
+
+   ```powershell
+   .\infra\grant-graph-permission.ps1 `
+       -FunctionAppName "<function-app-name>" `
+       -Permission "Files.Read.All"
+   ```
+
+   > **Security note:** `Files.Read.All` is a tenant-wide read on all SharePoint and OneDrive files. The per-site grant from step 2 still scopes which sites the *indexer code* enumerates, but the underlying token will technically be able to read any file the MI is asked to fetch. If your security-review process forbids `Files.Read.All`, see Troubleshooting **S6** for the strict `Sites.Selected`-only flow and the additional tenant-level configuration it requires.
+
+4. **Add Azure AI Search as a Knowledge Source on your Copilot Studio agent.** Built-in connector — no Entra app registration, no Power Platform connection, no topic YAML to import. The Bicep deployment provisioned the index schema before exiting, so Copilot Studio's wizard sees the vector index immediately. **Requires the Copilot Studio environment maker role.**
 
    - Open the agent in **Copilot Studio → Knowledge → + Add knowledge → Azure AI Search**.
    - Fill in:
@@ -217,8 +252,10 @@ Preferred when you need to review or customise each step.
    ```powershell
    .\infra\deploy.ps1 -ResourceGroup my-rg
    ```
-4. **Grant Sites.Selected** on your target site (see Automated Deployment step 1).
-5. **Add the AI Search index as a Knowledge Source** in Copilot Studio (see Automated Deployment step 2).
+4. **Grant `Sites.Selected` to the Function's MI** (see Automated Deployment step 1 — `grant-graph-permission.ps1`).
+5. **Grant the MI READ on your specific site** (see Automated Deployment step 2 — `grant-site-permission.ps1`).
+6. **Grant `Files.Read.All` to the Function's MI** (see Automated Deployment step 3 — `grant-graph-permission.ps1`).
+7. **Add the AI Search index as a Knowledge Source** in Copilot Studio (see Automated Deployment step 4).
 
 **Fork / custom-code users** — the template's `packageReleaseUrl` (defined as a `var` near the top of [infra/main.bicep](infra/main.bicep)) points at this repo's `sharepoint-connector-latest` GitHub Release. If you're deploying from a fork with code changes, let the `Release SharePoint Connector` GitHub Actions workflow run in your fork (it republishes the same tag against your fork's commits) and edit the `packageReleaseUrl` line in your local `main.bicep` to point at your fork.
 
