@@ -88,7 +88,7 @@ jiter==0.13.0
     # via openai
 lark==1.3.1
     # via rtfde
-lxml==6.0.2
+lxml==6.1.0
     # via
     #   ebooklib
     #   python-docx
@@ -120,7 +120,7 @@ openpyxl==3.1.5
     # via sharepoint-connector
 pcodedmp==1.2.6
     # via oletools
-pillow==12.1.1
+pillow==12.2.0
     # via python-pptx
 pycparser==3.0 ; implementation_name != 'PyPy' and platform_python_implementation != 'PyPy'
     # via cffi
@@ -136,7 +136,7 @@ pyparsing==3.3.2
     # via oletools
 python-docx==1.2.0
     # via sharepoint-connector
-python-dotenv==1.2.1
+python-dotenv==1.2.2
     # via sharepoint-connector
 python-pptx==1.0.2
     # via sharepoint-connector

@@ -19,7 +19,7 @@ All items must be reviewed and validated prior to delivery.
 
 ### 1.1 Required Licenses
 
-The customer must have the following licenses in place:
+The customer must have one of the following licenses in place:
 
 - **Power Platform**
   - Pay-As-You-Go environment enabled

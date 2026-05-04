@@ -1,10 +1,13 @@
 #  Content Understanding Flow Accelerator
 ## Objectives
-Copilot Studio is a native tool that can be extended with various Azure AI capabilities. Thanks to Microsoft’s accelerators, we can enhance its functionality and significantly improve performance. In this document, we’ll explore how each accelerator can support and complement Copilot Studio to achieve this goal.
+Copilot Studio is a native tool that can be extended with various Azure AI capabilities. Thanks to this accelerators, we can enhance its functionality and significantly improve performance. The accelerator enables Copilot Studio to use Azure AI Content Understanding for multimodal extraction (documents, images, audio, and video), automatically transforming unstructured enterprise content into structured and grounded outputs.
 
 On this case importing the [Content Understanding Flow] we were able to connect Copilot Studio with Content Understanding in a more efficient way, enabling advanced search capabilities and improving the overall user experience.
 
 ***
+### Video Walkthrough
+
+[Video Walkthrough](https://www.youtube.com/watch?v=4iQ7fo1OVMY)
 
 # 1) Prerequisites & What you’ll import
 
@@ -15,6 +18,11 @@ On this case importing the [Content Understanding Flow] we were able to connect 
     *   **Connection references** used by the flow/connector.
 *   Permissions to **import solutions** and activate flows/connectors. [\[learn.microsoft.com\]](https://learn.microsoft.com/en-us/power-apps/maker/data-platform/import-update-export-solutions)
 *   A **Content Understanding resource** with API key and endpoint. [\[learn.microsoft.com\]](https://learn.microsoft.com/en-us/azure/ai-services/content-understanding/how-to/create-multi-service-resource)
+*   **API key authentication must be enabled** on your Content Understanding / AI Services resource. If local authentication is disabled by policy, the custom connector will not be able to authenticate. Check this in the Azure Portal under your resource → Keys and Endpoint.
+*   An **Azure AI Foundry project** associated with your Content Understanding resource, with the following **models deployed**:
+    *   `GPT-4.1` or `GPT-4.1-mini` — required for document analysis and extraction.
+    *   `text-embedding-3-large` — required for search-based analyzers (e.g., image search, audio search, video search).
+    *   Different prebuilt analyzers require different models. Ensure the models needed for your chosen operation are deployed.
 
 > **Why solutions?** Solutions package apps, flows, connectors, env‑vars and make **ALM** (export/import, managed vs unmanaged) consistent across environments. [\[learn.microsoft.com\]](https://learn.microsoft.com/en-us/power-apps/maker/data-platform/import-update-export-solutions)
 
@@ -31,6 +39,21 @@ On this case importing the [Content Understanding Flow] we were able to connect 
 
 ***
 
+# 2.5) Set up Content Understanding defaults
+
+Before the flow can call the Content Understanding API, you must configure the defaults on your Content Understanding resource. This tells the service which Foundry models to use for processing.
+
+1.  Go to the **Content Understanding settings page** in the [Azure AI Foundry portal](https://ai.azure.com).
+2.  Select the **+ Add resource** button in the upper left.
+3.  Select the **Foundry resource** that you want to use and select **Next** → **Save**.
+4.  Make sure that the **Enable autodeployment for required models if no defaults are available** checkbox is selected. This ensures your resource is fully set up with the required `GPT-4.1`, `GPT-4.1-mini`, and `text-embedding-3-large` models.
+
+By taking these steps, you set up a connection between Content Understanding and Foundry models in your Foundry resource. [\[learn.microsoft.com\]](https://learn.microsoft.com/en-us/azure/ai-services/content-understanding/overview)
+
+> **Important:** If you skip this step, the flow will fail with the error: `"Defaults have not yet been set. Call 'PATCH /contentunderstanding/defaults' first."`
+
+***
+
 # 3) Configure connection references & authenticate
 
 After import:
@@ -40,7 +63,7 @@ After import:
 ![Add Connection](images/06.png)
 3.  On General change host name to yor Content Understanding endpoint. Such us <your_content_understanding_name>.services.ai.azure.com. Do not type https://
 ![Edit Connector General](images/07.png)
-4.  Leave steps 2, 3 and 4 as is.
+4.  Skip the connector wizard steps 2 (Security), 3 (Definition), and 4 (Code) as they are — no changes needed.
 5.  On Test tab, create a new connection using your **api-key** from Content Understanding.
 ![Create connection](images/08.png)
 ![Api-key](images/09.png)
@@ -124,9 +147,27 @@ Updates the finish variable with the latest status
 *       Click test.
 ![Test Panel](images/12.png)
 
-3.  Paste the **Body** of the request you want to send to Content Understanding. You can find examples of the body in the [test-sample](https://learn.microsoft.com/en-us/azure/ai-services/content-understanding/quickstart/use-rest-api?tabs=rest-api%2Cimage&pivots=programming-language-rest) .  
+3.  Paste the **Body** of the request. The body must contain a `url` property pointing to the document you want to analyse. For example:
 
-4.  Choose the **Operation** based on the file you want to analyze : `prebuilt-invoice`, `prebuilt-imageSearch`, `prebuilt-audioSearch`, `prebuilt-videoSearch` or `customanalysis` if you have any defined in the content undertanding playground [create-custom-analysis](https://learn.microsoft.com/en-us/azure/ai-services/content-understanding/tutorial/create-custom-analyzer?tabs=portal%2Cdocument&pivots=programming-language-rest).
+    ```json
+    {"inputs":[{"url":"https://github.com/Azure-Samples/azure-ai-content-understanding-python/raw/refs/heads/main/data/invoice.pdf"}]}
+    ```
+
+    You can find more examples in the [Content Understanding REST API quickstart](https://learn.microsoft.com/en-us/azure/ai-services/content-understanding/quickstart/use-rest-api?tabs=rest-api%2Cimage&pivots=programming-language-rest).
+
+    > **Note:** The body must use the `inputs` array format with a `url` field. Do not paste the API response JSON as the body — that is the output format, not the input.
+
+4.  Choose the **Operation** based on the file you want to analyze:
+
+    | Operation | Description | Required Models |
+    |---|---|---|
+    | `prebuilt-invoice` | Extract fields from invoices | GPT-4.1 or GPT-4.1-mini |
+    | `prebuilt-imageSearch` | Analyse and search images | GPT-4.1 or GPT-4.1-mini + text-embedding-3-large |
+    | `prebuilt-audioSearch` | Analyse and search audio | GPT-4.1 or GPT-4.1-mini + text-embedding-3-large |
+    | `prebuilt-videoSearch` | Analyse and search video | GPT-4.1 or GPT-4.1-mini + text-embedding-3-large |
+    | `customanalysis` | Custom analyzer defined in Content Understanding playground | Depends on configuration |
+
+    You can create custom analyzers in the Content Understanding playground. [\[learn.microsoft.com\]](https://learn.microsoft.com/en-us/azure/ai-services/content-understanding/tutorial/create-custom-analyzer?tabs=portal%2Cdocument&pivots=programming-language-rest)
 
 5.  Fill the **api-version** default value 2025-11-01.
 

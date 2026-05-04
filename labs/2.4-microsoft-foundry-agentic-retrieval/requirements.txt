@@ -225,7 +225,7 @@ multidict==6.7.1
     #   yarl
 nbclient==0.10.4
     # via nbconvert
-nbconvert==7.17.0
+nbconvert==7.17.1
     # via
     #   jupyter
     #   jupyter-server
@@ -288,7 +288,7 @@ pygments==2.20.0
     #   ipython-pygments-lexers
     #   jupyter-console
     #   nbconvert
-pyjwt[crypto]==2.11.0
+pyjwt[crypto]==2.12.0
     # via
     #   msal
     #   pyjwt
@@ -296,7 +296,7 @@ python-dateutil==2.9.0.post0
     # via
     #   arrow
     #   jupyter-client
-python-dotenv==1.2.1
+python-dotenv==1.2.2
     # via -r requirements.in
 python-json-logger==4.0.0
     # via jupyter-events

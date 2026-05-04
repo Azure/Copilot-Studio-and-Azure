@@ -47,7 +47,8 @@ Copilot Studio empowered by Azure is recommended in scenarios when:
 
 # Architecture
 
-<img width="785" height="545" alt="image" src="https://github.com/user-attachments/assets/350944c5-65cc-4aa4-a3f4-4713b30dc74f" />
+<img width="734" height="452" alt="image" src="https://github.com/user-attachments/assets/ccb8ee58-198b-495d-ad59-2163f11b27c4" />
+
 
 # Solutions Accelerators
 
@@ -59,12 +60,14 @@ By leveraging the [Solution Accelerators](docs/Solution-Accelerators.md), we can
 - The [SharePoint Connector Accelerator](/accelerators/sharepoint-connector) indexes a scoped SharePoint site into Azure AI Search with **unified multimodal embeddings** (text + images in one vector space) and wires it into Copilot Studio via an `OnKnowledgeRequested` topic that enforces **per-user security trimming** at retrieval time. Runs as a queue-fed Azure Function (Flex Consumption) with least-privilege Graph access (Sites.Selected), delta-query deletion propagation, and nightly index backup.
 - The [Azure Copilot Pricing Accelerator](/accelerators/azure-copilot-pricing) enables GitHub Copilot to fetch real-time Azure retail pricing and estimate Copilot Studio/foundry agent credit consumption directly inside your editor.
 - The [Voice Channel Accelerator](/accelerators/voice-channel) makes a Copilot Studio agent voice-capable across three surfaces — a custom Voice Live web UI, Microsoft Teams, and Microsoft 365 Copilot Chat — **without requiring the Omnichannel Engagement Hub license**. One Foundry Agent Service "IT Assistant" is shared across all three surfaces and calls the "Microsoft Learn Assistant" Copilot Studio agent (grounded via the Microsoft Learn MCP server) for answers. One-command `azd up` deployment, adapted from Azure-Samples/call-center-voice-agent-accelerator.
-
+- The [Content Understanding Accelerator](/accelerators/contentunderstanding) enables Copilot Studio to use Azure AI Content Understanding for multimodal extraction (documents, images, audio, and video), automatically transforming unstructured enterprise content into structured and grounded outputs.
+  
 # Project Kickoff
 
 - [Best Practices](docs/Best-Practices_decision-tree_for_building_copilot_studio_agent.md): Decision tree and best practices to build an agent.
 - [Functional Scoping](docs/Funtional-Scoping.md): Essential project template with AI‑guided prompts and an AI‑empowered scoping agent to accelerate fast, consistent technical scoping.
 - [Project Requirement](docs/Project-Requirement.md): This guide establishes the commercial, security, platform, and governance readiness required for teams to safely and efficiently design, deploy, and operate Copilot Studio agents integrated with Azure AI Foundry.
+- [Troubleshooting Copilot Studio](docs/troubleshooting/README.md): A 0‑to‑hero, maker‑oriented troubleshooting guide for the Copilot Studio portal — Basic, Intermediate, and Advanced — with step‑by‑step diagnostics, screenshots, and a shared diagnostic toolbox.
 
 # Learning Path
 **Lab 0: Prerequisites**

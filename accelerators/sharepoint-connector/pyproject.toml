@@ -31,7 +31,7 @@ func = [
 ]
 dev = [
     "ruff>=0.3.0",
-    "pytest>=8.0.0",
+    "pytest>=9.0.3",
 ]
 
 [tool.ruff]
