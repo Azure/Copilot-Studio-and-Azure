@@ -14,7 +14,17 @@
       "Host.Aggregator": "Trace"
     }
   },
-  "functionTimeout": "00:10:00",
+  "functionTimeout": "00:30:00",
+  "extensions": {
+    "queues": {
+      "maxPollingInterval": "00:00:02",
+      "visibilityTimeout": "00:10:00",
+      "batchSize": 8,
+      "maxDequeueCount": 5,
+      "newBatchThreshold": 4,
+      "messageEncoding": "none"
+    }
+  },
   "extensionBundle": {
     "id": "Microsoft.Azure.Functions.ExtensionBundle",
     "version": "[4.*, 5.0.0)"

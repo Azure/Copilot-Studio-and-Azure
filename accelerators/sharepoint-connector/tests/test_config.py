@@ -5,14 +5,14 @@ import pytest
 from unittest.mock import patch
 
 # Import at module level so load_dotenv() runs BEFORE any env patching
-from config import load_config
+from config import FunctionProcessingMode, ProcessingMode, load_config
 
 # Minimal required env vars for a valid config
 _REQUIRED_ENV = {
     "TENANT_ID": "test-tenant-id",
     "SHAREPOINT_SITE_URL": "https://contoso.sharepoint.com/sites/TestSite",
     "SEARCH_ENDPOINT": "https://my-search.search.windows.net",
-    "FOUNDRY_ENDPOINT": "https://my-foundry.services.ai.azure.com",
+    "MULTIMODAL_ENDPOINT": "https://my-foundry.cognitiveservices.azure.com",
 }
 
 
@@ -37,10 +37,10 @@ class TestLoadConfigRequired:
             with pytest.raises(EnvironmentError, match="SEARCH_ENDPOINT"):
                 load_config()
 
-    def test_missing_foundry_endpoint(self):
-        env = {k: v for k, v in _REQUIRED_ENV.items() if k != "FOUNDRY_ENDPOINT"}
+    def test_missing_multimodal_endpoint(self):
+        env = {k: v for k, v in _REQUIRED_ENV.items() if k != "MULTIMODAL_ENDPOINT"}
         with patch.dict(os.environ, env, clear=True):
-            with pytest.raises(EnvironmentError, match="FOUNDRY_ENDPOINT"):
+            with pytest.raises(EnvironmentError, match="MULTIMODAL_ENDPOINT"):
                 load_config()
 
 
@@ -61,24 +61,30 @@ class TestLoadConfigDefaults:
 
         assert cfg.search.index_name == "sharepoint-index"
 
-        assert cfg.openai.embedding_deployment == "text-embedding-3-large"
-        assert cfg.openai.embedding_dimensions == 1536
+        assert cfg.multimodal.endpoint == "https://my-foundry.cognitiveservices.azure.com"
+        assert cfg.multimodal.model_version == "2023-04-15"
+        assert cfg.multimodal.images_container == "images"
 
         assert cfg.indexer.chunk_size == 2000
         assert cfg.indexer.chunk_overlap == 200
         assert cfg.indexer.max_concurrency == 4
-        assert cfg.indexer.max_file_size_mb == 100
-        assert cfg.indexer.incremental_minutes == 0
+        assert cfg.indexer.max_file_size_mb == 500
+        assert cfg.indexer.processing_mode == ProcessingMode.SINCE_LAST_RUN
+        assert cfg.indexer.start_date is None
+        assert cfg.indexer.function_processing_mode == FunctionProcessingMode.QUEUE
+        assert cfg.indexer.extract_images is True
 
     def test_default_extensions_count(self):
         with patch.dict(os.environ, _REQUIRED_ENV, clear=True):
             cfg = load_config()
 
-        # Default should include all 24 supported extensions
-        assert len(cfg.indexer.indexed_extensions) == 24
+        # Default extensions now include standalone image formats (29 total).
+        assert len(cfg.indexer.indexed_extensions) == 29
         assert ".pdf" in cfg.indexer.indexed_extensions
         assert ".zip" in cfg.indexer.indexed_extensions
         assert ".gz" in cfg.indexer.indexed_extensions
+        assert ".png" in cfg.indexer.indexed_extensions
+        assert ".jpg" in cfg.indexer.indexed_extensions
 
 
 class TestLoadConfigCustomValues:
@@ -91,13 +97,15 @@ class TestLoadConfigCustomValues:
             "CLIENT_SECRET": "my-secret",
             "SHAREPOINT_LIBRARIES": "Documents, Reports, Archive",
             "SEARCH_INDEX_NAME": "custom-index",
-            "FOUNDRY_EMBEDDING_DEPLOYMENT": "text-embedding-3-large",
-            "FOUNDRY_EMBEDDING_DIMENSIONS": "3072",
+            "MULTIMODAL_MODEL_VERSION": "2023-04-15",
+            "IMAGES_CONTAINER": "custom-images",
             "CHUNK_SIZE": "1500",
             "CHUNK_OVERLAP": "150",
             "MAX_CONCURRENCY": "8",
             "MAX_FILE_SIZE_MB": "50",
-            "INCREMENTAL_MINUTES": "60",
+            "PROCESSING_MODE": "full",
+            "FUNCTION_PROCESSING_MODE": "inline",
+            "EXTRACT_IMAGES": "false",
             "INDEXED_EXTENSIONS": ".pdf,.docx,.txt",
         }
         with patch.dict(os.environ, env, clear=True):
@@ -111,14 +119,16 @@ class TestLoadConfigCustomValues:
 
         assert cfg.search.index_name == "custom-index"
 
-        assert cfg.openai.embedding_deployment == "text-embedding-3-large"
-        assert cfg.openai.embedding_dimensions == 3072
+        assert cfg.multimodal.model_version == "2023-04-15"
+        assert cfg.multimodal.images_container == "custom-images"
 
         assert cfg.indexer.chunk_size == 1500
         assert cfg.indexer.chunk_overlap == 150
         assert cfg.indexer.max_concurrency == 8
         assert cfg.indexer.max_file_size_mb == 50
-        assert cfg.indexer.incremental_minutes == 60
+        assert cfg.indexer.processing_mode == ProcessingMode.FULL
+        assert cfg.indexer.function_processing_mode == FunctionProcessingMode.INLINE
+        assert cfg.indexer.extract_images is False
         assert cfg.indexer.indexed_extensions == [".pdf", ".docx", ".txt"]
 
 

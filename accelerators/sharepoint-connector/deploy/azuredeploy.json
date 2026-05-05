@@ -1,130 +1,120 @@
 {
   "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "languageVersion": "2.0",
   "contentVersion": "1.0.0.0",
   "metadata": {
     "_generator": {
       "name": "bicep",
       "version": "0.42.1.51946",
-      "templateHash": "12761531461830522080"
+      "templateHash": "517038233000661893"
     }
   },
   "parameters": {
     "baseName": {
       "type": "string",
+      "minLength": 3,
+      "maxLength": 16,
       "metadata": {
-        "description": "Base name for all resources (lowercase, no spaces)"
+        "description": "Base name for every resource. Lowercase letters / digits / hyphens. Used as a prefix; a short uniqueness hash is appended where Azure requires globally-unique names."
       }
     },
     "location": {
       "type": "string",
       "defaultValue": "[resourceGroup().location]",
       "metadata": {
-        "description": "Azure region for deployment"
-      }
-    },
-    "tenantId": {
-      "type": "string",
-      "metadata": {
-        "description": "Tenant ID for Entra ID / Graph API"
+        "description": "Azure region. Pick one that supports Azure AI Vision multimodal 4.0 (see Microsoft Learn for the current list)."
       }
     },
     "sharePointSiteUrl": {
       "type": "string",
       "metadata": {
-        "description": "SharePoint site URL (e.g. https://company.sharepoint.com/sites/MySite)"
+        "description": "Full SharePoint site URL the connector will monitor, e.g. https://contoso.sharepoint.com/sites/YourSite"
       }
     },
-    "searchEndpoint": {
-      "type": "string",
+    "enableSecurityTrimming": {
+      "type": "bool",
+      "defaultValue": false,
       "metadata": {
-        "description": "Azure AI Search endpoint (e.g. https://my-search.search.windows.net)"
+        "description": "Per-user security trimming. Default false: Copilot Studio queries Azure AI Search directly as a Knowledge Source — simplest deployment, no Entra app registration, no Power Platform connection. Set true to also create the /api/search Entra app registration that the OnKnowledgeRequested topic uses to enforce SharePoint ACLs at query time. Requires `Application Administrator` Entra role unless `apiAudience` is supplied. See the README section \"Extending with Per-User Security Trimming\" for the full opt-in walkthrough."
       }
     },
-    "searchResourceId": {
-      "type": "string",
-      "metadata": {
-        "description": "Azure AI Search resource ID (for RBAC scope)"
-      }
-    },
-    "searchIndexName": {
-      "type": "string",
-      "defaultValue": "sharepoint-index",
-      "metadata": {
-        "description": "Search index name"
-      }
-    },
-    "foundryEndpoint": {
-      "type": "string",
-      "metadata": {
-        "description": "Azure OpenAI / Foundry endpoint (base URL)"
-      }
-    },
-    "foundryResourceId": {
-      "type": "string",
-      "metadata": {
-        "description": "Azure OpenAI resource ID (for RBAC scope)"
-      }
-    },
-    "foundryEmbeddingDeployment": {
-      "type": "string",
-      "defaultValue": "text-embedding-3-large",
-      "metadata": {
-        "description": "Embedding model deployment name"
-      }
-    },
-    "foundryEmbeddingDimensions": {
-      "type": "string",
-      "defaultValue": "1536",
-      "metadata": {
-        "description": "Embedding dimensions"
-      }
-    },
-    "indexerSchedule": {
-      "type": "string",
-      "defaultValue": "0 0 * * * *",
-      "metadata": {
-        "description": "CRON schedule for the indexer (default: every hour)"
-      }
-    },
-    "incrementalMinutes": {
-      "type": "string",
-      "defaultValue": "60",
-      "metadata": {
-        "description": "Incremental sync window in minutes (0 = full reindex)"
-      }
-    },
-    "sharePointLibraries": {
+    "apiAudience": {
       "type": "string",
       "defaultValue": "",
       "metadata": {
-        "description": "SharePoint libraries to index (comma-separated, empty = all)"
-      }
-    },
-    "indexedExtensions": {
-      "type": "string",
-      "defaultValue": ".pdf,.docx,.docm,.xlsx,.xlsm,.pptx,.pptm,.txt,.md,.csv,.json,.xml,.kml,.html,.htm,.rtf,.eml,.epub,.msg,.odt,.ods,.odp,.zip,.gz",
-      "metadata": {
-        "description": "File extensions to index"
+        "description": "Optional escape hatch — only relevant when enableSecurityTrimming = true. When empty, the template creates the Entra app registration itself via the Microsoft Graph Bicep extension (deployer needs `Application Administrator`). When non-empty, the template skips creating the app and uses this client ID instead — useful when the deployer lacks Graph privileges and an admin has pre-created the app via infra/create-api-app-registration.ps1. Accepts a bare GUID or an `api://<clientId>` URI."
       }
     }
   },
   "variables": {
-    "functionAppName": "[format('{0}-func', parameters('baseName'))]",
-    "storageName": "[replace(format('{0}st', parameters('baseName')), '-', '')]",
+    "$fxv#0": "{\n  \"name\": \"sharepoint-index\",\n  \"fields\": [\n    { \"name\": \"chunk_id\",          \"type\": \"Edm.String\",                   \"key\": true,  \"filterable\": true,  \"searchable\": false, \"sortable\": false, \"facetable\": false, \"retrievable\": true },\n    { \"name\": \"parent_id\",         \"type\": \"Edm.String\",                   \"filterable\": true,  \"searchable\": false, \"sortable\": false, \"facetable\": false, \"retrievable\": true },\n    { \"name\": \"content_text\",      \"type\": \"Edm.String\",                   \"filterable\": false, \"searchable\": true,  \"sortable\": false, \"facetable\": false, \"retrievable\": true, \"analyzer\": \"standard.lucene\" },\n    { \"name\": \"title\",             \"type\": \"Edm.String\",                   \"filterable\": true,  \"searchable\": true,  \"sortable\": true,  \"facetable\": false, \"retrievable\": true, \"analyzer\": \"standard.lucene\" },\n    { \"name\": \"source_url\",        \"type\": \"Edm.String\",                   \"filterable\": false, \"searchable\": false, \"sortable\": false, \"facetable\": false, \"retrievable\": true },\n    { \"name\": \"last_modified\",     \"type\": \"Edm.DateTimeOffset\",           \"filterable\": true,  \"sortable\": true,    \"facetable\": false, \"retrievable\": true },\n    { \"name\": \"content_type\",      \"type\": \"Edm.String\",                   \"filterable\": true,  \"searchable\": false, \"sortable\": false, \"facetable\": false, \"retrievable\": true },\n    { \"name\": \"file_size\",         \"type\": \"Edm.Int64\",                    \"filterable\": true,  \"sortable\": false,   \"facetable\": false, \"retrievable\": true },\n    { \"name\": \"created_by\",        \"type\": \"Edm.String\",                   \"filterable\": true,  \"searchable\": false, \"sortable\": false, \"facetable\": false, \"retrievable\": true },\n    { \"name\": \"modified_by\",       \"type\": \"Edm.String\",                   \"filterable\": true,  \"searchable\": false, \"sortable\": false, \"facetable\": false, \"retrievable\": true },\n    { \"name\": \"drive_name\",        \"type\": \"Edm.String\",                   \"filterable\": true,  \"searchable\": false, \"sortable\": false, \"facetable\": false, \"retrievable\": true },\n    { \"name\": \"permission_ids\",    \"type\": \"Collection(Edm.String)\",       \"filterable\": true,  \"searchable\": false, \"facetable\": false, \"retrievable\": true },\n    { \"name\": \"has_image\",         \"type\": \"Edm.Boolean\",                  \"filterable\": true,  \"sortable\": false,   \"facetable\": false, \"retrievable\": true },\n    { \"name\": \"content_path\",      \"type\": \"Edm.String\",                   \"filterable\": false, \"searchable\": false, \"sortable\": false, \"facetable\": false, \"retrievable\": true },\n    {\n      \"name\": \"location_metadata\",\n      \"type\": \"Edm.ComplexType\",\n      \"fields\": [\n        { \"name\": \"page_number\",       \"type\": \"Edm.Int32\",  \"filterable\": true,  \"sortable\": false, \"facetable\": false, \"retrievable\": true },\n        { \"name\": \"bounding_polygons\", \"type\": \"Edm.String\", \"filterable\": false, \"searchable\": false, \"sortable\": false, \"facetable\": false, \"retrievable\": true }\n      ]\n    },\n    {\n      \"name\": \"content_embedding\",\n      \"type\": \"Collection(Edm.Single)\",\n      \"searchable\": true,\n      \"retrievable\": true,\n      \"filterable\": false,\n      \"sortable\": false,\n      \"facetable\": false,\n      \"dimensions\": 1024,\n      \"vectorSearchProfile\": \"sp-vector-profile\"\n    }\n  ],\n  \"vectorSearch\": {\n    \"algorithms\": [\n      { \"name\": \"sp-hnsw\", \"kind\": \"hnsw\" }\n    ],\n    \"profiles\": [\n      {\n        \"name\": \"sp-vector-profile\",\n        \"algorithm\": \"sp-hnsw\",\n        \"vectorizer\": \"sp-aivision-vectorizer\"\n      }\n    ],\n    \"vectorizers\": [\n      {\n        \"name\": \"sp-aivision-vectorizer\",\n        \"kind\": \"aiServicesVision\",\n        \"aiServicesVisionParameters\": {\n          \"resourceUri\": \"__MULTIMODAL_ENDPOINT__\",\n          \"modelVersion\": \"__MULTIMODAL_MODEL_VERSION__\"\n        }\n      }\n    ]\n  },\n  \"semantic\": {\n    \"defaultConfiguration\": \"sp-semantic-config\",\n    \"configurations\": [\n      {\n        \"name\": \"sp-semantic-config\",\n        \"prioritizedFields\": {\n          \"titleField\": { \"fieldName\": \"title\" },\n          \"prioritizedContentFields\": [\n            { \"fieldName\": \"content_text\" }\n          ]\n        }\n      }\n    ]\n  }\n}\n",
+    "shouldCreateAppRegistration": "[and(parameters('enableSecurityTrimming'), empty(parameters('apiAudience')))]",
+    "packageReleaseUrl": "https://github.com/gokseloral/Copilot-Studio-and-Azure/releases/download/sharepoint-connector-latest/sharepoint-connector.zip",
+    "searchIndexName": "sharepoint-index",
+    "indexerSchedule": "0 0 * * * *",
+    "backupSchedule": "0 0 3 * * *",
+    "backupRetentionDays": 7,
+    "processingMode": "since-last-run",
+    "startDate": "",
+    "sharePointLibraries": "",
+    "sharePointRootPaths": "",
+    "indexedExtensions": ".pdf,.docx,.docm,.xlsx,.xlsm,.pptx,.pptm,.txt,.md,.csv,.json,.xml,.kml,.html,.htm,.rtf,.eml,.epub,.msg,.odt,.ods,.odp,.zip,.gz,.png,.jpg,.jpeg,.tiff,.bmp",
+    "maxFileSizeMb": 500,
+    "vectoriseConcurrency": 8,
+    "multimodalMaxInFlight": 8,
+    "reconcileEveryNRuns": 24,
+    "functionProcessingMode": "queue",
+    "instanceMemoryMB": 4096,
+    "multimodalModelVersion": "2023-04-15",
+    "imagesContainerName": "images",
+    "extractImages": true,
+    "alwaysAllowedIds": "",
+    "searchSku": "basic",
+    "nameSuffix": "[take(uniqueString(resourceGroup().id, parameters('baseName')), 6)]",
+    "functionAppName": "[format('{0}-func-{1}', parameters('baseName'), variables('nameSuffix'))]",
+    "storageName": "[toLower(format('{0}st{1}', replace(parameters('baseName'), '-', ''), variables('nameSuffix')))]",
     "appInsightsName": "[format('{0}-insights', parameters('baseName'))]",
     "logAnalyticsName": "[format('{0}-logs', parameters('baseName'))]",
+    "keyVaultName": "[take(format('{0}-kv-{1}', parameters('baseName'), variables('nameSuffix')), 24)]",
+    "searchServiceName": "[take(toLower(format('{0}-search-{1}', parameters('baseName'), variables('nameSuffix'))), 60)]",
+    "foundryAccountName": "[take(format('{0}-foundry-{1}', parameters('baseName'), variables('nameSuffix')), 60)]",
+    "docIntelName": "[take(format('{0}-docintel-{1}', parameters('baseName'), variables('nameSuffix')), 60)]",
     "deployContainerName": "app-package",
-    "searchServiceName": "[last(split(parameters('searchResourceId'), '/'))]",
-    "cognitiveAccountName": "[last(split(parameters('foundryResourceId'), '/'))]",
+    "stateContainerName": "state",
+    "backupContainerName": "backup",
+    "indexerQueueName": "sp-indexer-q",
+    "indexerPoisonQueueName": "sp-indexer-q-poison",
+    "failedFilesTableName": "failedFiles",
+    "runStateTableName": "runState",
+    "watermarkTableName": "watermark",
+    "foundryEndpoint": "[format('https://{0}.cognitiveservices.azure.com', variables('foundryAccountName'))]",
+    "docIntelEndpoint": "[format('https://{0}.cognitiveservices.azure.com', variables('docIntelName'))]",
+    "searchEndpoint": "[format('https://{0}.search.windows.net', variables('searchServiceName'))]",
     "searchDataContributorRoleId": "8ebe5a00-799e-43f5-93ac-243d3dce84a7",
     "searchServiceContributorRoleId": "7ca78c08-252a-4471-8644-bb5ff32d4ba0",
-    "cognitiveServicesOpenAIUserRoleId": "5e0bd9bd-7b93-4f28-af87-19fc36ad61bd",
+    "cognitiveServicesUserRoleId": "a97b65f3-24c7-4388-baec-2e87135dc908",
     "storageBlobDataOwnerRoleId": "b7e6dc6d-f1e8-4753-8033-0f276bb0955b",
     "storageAccountContributorRoleId": "17d1049b-9a84-46fb-8f53-869881c3d3ab",
-    "storageQueueDataContributorRoleId": "974c5e8b-45b9-4653-ba55-5f855dd0fb88"
+    "storageQueueDataContributorRoleId": "974c5e8b-45b9-4653-ba55-5f855dd0fb88",
+    "storageTableDataContributorRoleId": "0a9a7e1f-b9d0-4cc4-a60d-0319b160aaa3",
+    "keyVaultSecretsUserRoleId": "4633458b-17de-408a-b874-0445c86b69e6",
+    "websiteContributorRoleId": "de139f84-1756-47ae-9be6-808fbbe84772",
+    "apiAppUniqueName": "[format('sharepoint-connector-api-{0}', variables('nameSuffix'))]",
+    "accessAsUserScopeId": "[guid(resourceGroup().id, 'access_as_user')]",
+    "graphAppId": "00000003-0000-0000-c000-000000000000",
+    "groupMemberReadAllRoleId": "98830695-27a2-44f7-8c18-0c3ebc9698f6",
+    "suppliedClientId": "[if(startsWith(parameters('apiAudience'), 'api://'), substring(parameters('apiAudience'), 6), parameters('apiAudience'))]",
+    "indexSchema": "[replace(replace(variables('$fxv#0'), '__MULTIMODAL_ENDPOINT__', variables('foundryEndpoint')), '__MULTIMODAL_MODEL_VERSION__', variables('multimodalModelVersion'))]",
+    "createIndexScriptTemplate": "set -eu\nset -o pipefail\necho \"=== createSearchIndex starting ===\"\necho \"SEARCH_NAME=$SEARCH_NAME RESOURCE_GROUP=$RESOURCE_GROUP INDEX_NAME=$INDEX_NAME\"\n\ncat > /tmp/index.json <<'BICEPJSONEOF'\n__INDEX_SCHEMA_PLACEHOLDER__\nBICEPJSONEOF\necho \"Wrote /tmp/index.json ($(wc -c < /tmp/index.json) bytes)\"\nhead -c 400 /tmp/index.json; echo\n\necho \"=== Fetching admin key (with RBAC-propagation retries) ===\"\nADMIN_KEY=\"\"\nfor i in 1 2 3 4 5 6; do\n  echo \"Attempt $i: az search admin-key show --service-name $SEARCH_NAME\"\n  if K=$(az search admin-key show \\\n            --service-name \"$SEARCH_NAME\" \\\n            --resource-group \"$RESOURCE_GROUP\" \\\n            --query primaryKey -o tsv 2>&1); then\n    if [ -n \"$K\" ] && [ \"${#K}\" -gt 20 ]; then\n      ADMIN_KEY=\"$K\"\n      echo \"Admin key retrieved on attempt $i (length=${#ADMIN_KEY})\"\n      break\n    fi\n  else\n    echo \"az returned non-zero: $K\"\n  fi\n  echo \"Sleeping 20s before retry\"\n  sleep 20\ndone\nif [ -z \"$ADMIN_KEY\" ]; then\n  echo \"ERROR: failed to fetch admin key after retries\" >&2\n  exit 1\nfi\n\necho \"=== PUT $SEARCH_ENDPOINT/indexes/$INDEX_NAME ===\"\nHTTP=$(curl -sS -o /tmp/resp.json -w \"%{http_code}\" -X PUT \\\n       \"$SEARCH_ENDPOINT/indexes/$INDEX_NAME?api-version=2024-11-01-preview\" \\\n       -H \"api-key: $ADMIN_KEY\" \\\n       -H \"Content-Type: application/json\" \\\n       --data @/tmp/index.json)\necho \"Returned HTTP $HTTP\"\necho \"Response body:\"\ncat /tmp/resp.json; echo\nif [ \"$HTTP\" != \"200\" ] && [ \"$HTTP\" != \"201\" ] && [ \"$HTTP\" != \"204\" ]; then\n  echo \"ERROR: index creation failed\" >&2\n  exit 1\nfi\necho \"Index '$INDEX_NAME' is ready\"\n"
   },
-  "resources": [
-    {
+  "imports": {
+    "microsoftGraphV1_0": {
+      "provider": "MicrosoftGraph",
+      "version": "1.0.0"
+    }
+  },
+  "resources": {
+    "storageAccount": {
       "type": "Microsoft.Storage/storageAccounts",
       "apiVersion": "2023-05-01",
       "name": "[variables('storageName')]",
@@ -136,26 +126,107 @@
       "properties": {
         "minimumTlsVersion": "TLS1_2",
         "supportsHttpsTrafficOnly": true,
-        "allowSharedKeyAccess": false
+        "allowSharedKeyAccess": false,
+        "allowBlobPublicAccess": false
       }
     },
-    {
+    "blobService": {
       "type": "Microsoft.Storage/storageAccounts/blobServices",
       "apiVersion": "2023-05-01",
       "name": "[format('{0}/{1}', variables('storageName'), 'default')]",
       "dependsOn": [
-        "[resourceId('Microsoft.Storage/storageAccounts', variables('storageName'))]"
+        "storageAccount"
       ]
     },
-    {
+    "deployContainer": {
       "type": "Microsoft.Storage/storageAccounts/blobServices/containers",
       "apiVersion": "2023-05-01",
       "name": "[format('{0}/{1}/{2}', variables('storageName'), 'default', variables('deployContainerName'))]",
       "dependsOn": [
-        "[resourceId('Microsoft.Storage/storageAccounts/blobServices', variables('storageName'), 'default')]"
+        "blobService"
       ]
     },
-    {
+    "stateContainer": {
+      "type": "Microsoft.Storage/storageAccounts/blobServices/containers",
+      "apiVersion": "2023-05-01",
+      "name": "[format('{0}/{1}/{2}', variables('storageName'), 'default', variables('stateContainerName'))]",
+      "dependsOn": [
+        "blobService"
+      ]
+    },
+    "imagesContainer": {
+      "type": "Microsoft.Storage/storageAccounts/blobServices/containers",
+      "apiVersion": "2023-05-01",
+      "name": "[format('{0}/{1}/{2}', variables('storageName'), 'default', variables('imagesContainerName'))]",
+      "dependsOn": [
+        "blobService"
+      ]
+    },
+    "backupContainer": {
+      "type": "Microsoft.Storage/storageAccounts/blobServices/containers",
+      "apiVersion": "2023-05-01",
+      "name": "[format('{0}/{1}/{2}', variables('storageName'), 'default', variables('backupContainerName'))]",
+      "dependsOn": [
+        "blobService"
+      ]
+    },
+    "queueService": {
+      "type": "Microsoft.Storage/storageAccounts/queueServices",
+      "apiVersion": "2023-05-01",
+      "name": "[format('{0}/{1}', variables('storageName'), 'default')]",
+      "dependsOn": [
+        "storageAccount"
+      ]
+    },
+    "indexerQueue": {
+      "type": "Microsoft.Storage/storageAccounts/queueServices/queues",
+      "apiVersion": "2023-05-01",
+      "name": "[format('{0}/{1}/{2}', variables('storageName'), 'default', variables('indexerQueueName'))]",
+      "dependsOn": [
+        "queueService"
+      ]
+    },
+    "indexerPoisonQueue": {
+      "type": "Microsoft.Storage/storageAccounts/queueServices/queues",
+      "apiVersion": "2023-05-01",
+      "name": "[format('{0}/{1}/{2}', variables('storageName'), 'default', variables('indexerPoisonQueueName'))]",
+      "dependsOn": [
+        "queueService"
+      ]
+    },
+    "tableService": {
+      "type": "Microsoft.Storage/storageAccounts/tableServices",
+      "apiVersion": "2023-05-01",
+      "name": "[format('{0}/{1}', variables('storageName'), 'default')]",
+      "dependsOn": [
+        "storageAccount"
+      ]
+    },
+    "failedFilesTable": {
+      "type": "Microsoft.Storage/storageAccounts/tableServices/tables",
+      "apiVersion": "2023-05-01",
+      "name": "[format('{0}/{1}/{2}', variables('storageName'), 'default', variables('failedFilesTableName'))]",
+      "dependsOn": [
+        "tableService"
+      ]
+    },
+    "runStateTable": {
+      "type": "Microsoft.Storage/storageAccounts/tableServices/tables",
+      "apiVersion": "2023-05-01",
+      "name": "[format('{0}/{1}/{2}', variables('storageName'), 'default', variables('runStateTableName'))]",
+      "dependsOn": [
+        "tableService"
+      ]
+    },
+    "watermarkTable": {
+      "type": "Microsoft.Storage/storageAccounts/tableServices/tables",
+      "apiVersion": "2023-05-01",
+      "name": "[format('{0}/{1}/{2}', variables('storageName'), 'default', variables('watermarkTableName'))]",
+      "dependsOn": [
+        "tableService"
+      ]
+    },
+    "logAnalytics": {
       "type": "Microsoft.OperationalInsights/workspaces",
       "apiVersion": "2023-09-01",
       "name": "[variables('logAnalyticsName')]",
@@ -167,7 +238,7 @@
         "retentionInDays": 30
       }
     },
-    {
+    "appInsights": {
       "type": "Microsoft.Insights/components",
       "apiVersion": "2020-02-02",
       "name": "[variables('appInsightsName')]",
@@ -178,10 +249,186 @@
         "WorkspaceResourceId": "[resourceId('Microsoft.OperationalInsights/workspaces', variables('logAnalyticsName'))]"
       },
       "dependsOn": [
-        "[resourceId('Microsoft.OperationalInsights/workspaces', variables('logAnalyticsName'))]"
+        "logAnalytics"
       ]
     },
-    {
+    "searchService": {
+      "type": "Microsoft.Search/searchServices",
+      "apiVersion": "2024-06-01-preview",
+      "name": "[variables('searchServiceName')]",
+      "location": "[parameters('location')]",
+      "sku": {
+        "name": "[variables('searchSku')]"
+      },
+      "identity": {
+        "type": "SystemAssigned"
+      },
+      "properties": {
+        "replicaCount": 1,
+        "partitionCount": 1,
+        "hostingMode": "default",
+        "publicNetworkAccess": "enabled",
+        "semanticSearch": "standard",
+        "authOptions": {
+          "aadOrApiKey": {
+            "aadAuthFailureMode": "http403"
+          }
+        }
+      }
+    },
+    "foundryAccount": {
+      "type": "Microsoft.CognitiveServices/accounts",
+      "apiVersion": "2024-10-01",
+      "name": "[variables('foundryAccountName')]",
+      "location": "[parameters('location')]",
+      "kind": "AIServices",
+      "sku": {
+        "name": "S0"
+      },
+      "properties": {
+        "customSubDomainName": "[variables('foundryAccountName')]",
+        "publicNetworkAccess": "Enabled"
+      },
+      "identity": {
+        "type": "SystemAssigned"
+      }
+    },
+    "docIntel": {
+      "type": "Microsoft.CognitiveServices/accounts",
+      "apiVersion": "2024-10-01",
+      "name": "[variables('docIntelName')]",
+      "location": "[parameters('location')]",
+      "kind": "FormRecognizer",
+      "sku": {
+        "name": "S0"
+      },
+      "properties": {
+        "customSubDomainName": "[variables('docIntelName')]",
+        "publicNetworkAccess": "Enabled"
+      },
+      "identity": {
+        "type": "SystemAssigned"
+      }
+    },
+    "keyVault": {
+      "type": "Microsoft.KeyVault/vaults",
+      "apiVersion": "2023-07-01",
+      "name": "[variables('keyVaultName')]",
+      "location": "[parameters('location')]",
+      "properties": {
+        "tenantId": "[subscription().tenantId]",
+        "sku": {
+          "family": "A",
+          "name": "standard"
+        },
+        "enableRbacAuthorization": true,
+        "enableSoftDelete": true,
+        "softDeleteRetentionInDays": 7,
+        "publicNetworkAccess": "Enabled"
+      }
+    },
+    "apiApp": {
+      "condition": "[variables('shouldCreateAppRegistration')]",
+      "import": "microsoftGraphV1_0",
+      "type": "Microsoft.Graph/applications@v1.0",
+      "properties": {
+        "uniqueName": "[variables('apiAppUniqueName')]",
+        "displayName": "[format('{0} SharePoint Connector API', parameters('baseName'))]",
+        "signInAudience": "AzureADMyOrg",
+        "identifierUris": [
+          "[format('api://{0}', variables('apiAppUniqueName'))]"
+        ],
+        "api": {
+          "oauth2PermissionScopes": [
+            {
+              "id": "[variables('accessAsUserScopeId')]",
+              "value": "access_as_user",
+              "type": "User",
+              "isEnabled": true,
+              "adminConsentDisplayName": "Access SharePoint search on behalf of the signed-in user",
+              "adminConsentDescription": "Allows Copilot Studio (or another delegated caller) to query the SharePoint Connector /api/search endpoint on behalf of the signed-in user. Per-user security trimming is enforced server-side.",
+              "userConsentDisplayName": "Search SharePoint on your behalf",
+              "userConsentDescription": "Allows the app to query the SharePoint Connector as you, returning only documents you have access to."
+            }
+          ]
+        },
+        "requiredResourceAccess": [
+          {
+            "resourceAppId": "[variables('graphAppId')]",
+            "resourceAccess": [
+              {
+                "id": "[variables('groupMemberReadAllRoleId')]",
+                "type": "Role"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "deployerIdentity": {
+      "type": "Microsoft.ManagedIdentity/userAssignedIdentities",
+      "apiVersion": "2023-01-31",
+      "name": "[format('{0}-deployer-{1}', parameters('baseName'), variables('nameSuffix'))]",
+      "location": "[parameters('location')]"
+    },
+    "deployerSearchRole": {
+      "type": "Microsoft.Authorization/roleAssignments",
+      "apiVersion": "2022-04-01",
+      "scope": "[resourceId('Microsoft.Search/searchServices', variables('searchServiceName'))]",
+      "name": "[guid(resourceId('Microsoft.Search/searchServices', variables('searchServiceName')), variables('searchServiceContributorRoleId'), resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-deployer-{1}', parameters('baseName'), variables('nameSuffix'))))]",
+      "properties": {
+        "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', variables('searchServiceContributorRoleId'))]",
+        "principalId": "[reference('deployerIdentity').principalId]",
+        "principalType": "ServicePrincipal"
+      },
+      "dependsOn": [
+        "deployerIdentity",
+        "searchService"
+      ]
+    },
+    "createSearchIndex": {
+      "type": "Microsoft.Resources/deploymentScripts",
+      "apiVersion": "2023-08-01",
+      "name": "[format('{0}-create-index', parameters('baseName'))]",
+      "location": "[parameters('location')]",
+      "kind": "AzureCLI",
+      "identity": {
+        "type": "UserAssigned",
+        "userAssignedIdentities": {
+          "[format('{0}', resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-deployer-{1}', parameters('baseName'), variables('nameSuffix'))))]": {}
+        }
+      },
+      "properties": {
+        "azCliVersion": "2.65.0",
+        "timeout": "PT10M",
+        "retentionInterval": "PT1H",
+        "cleanupPreference": "OnSuccess",
+        "environmentVariables": [
+          {
+            "name": "SEARCH_ENDPOINT",
+            "value": "[variables('searchEndpoint')]"
+          },
+          {
+            "name": "SEARCH_NAME",
+            "value": "[variables('searchServiceName')]"
+          },
+          {
+            "name": "RESOURCE_GROUP",
+            "value": "[resourceGroup().name]"
+          },
+          {
+            "name": "INDEX_NAME",
+            "value": "[variables('searchIndexName')]"
+          }
+        ],
+        "scriptContent": "[replace(variables('createIndexScriptTemplate'), '__INDEX_SCHEMA_PLACEHOLDER__', variables('indexSchema'))]"
+      },
+      "dependsOn": [
+        "deployerIdentity",
+        "deployerSearchRole"
+      ]
+    },
+    "flexPlan": {
       "type": "Microsoft.Web/serverfarms",
       "apiVersion": "2024-04-01",
       "name": "[format('{0}-plan', parameters('baseName'))]",
@@ -195,7 +442,7 @@
         "reserved": true
       }
     },
-    {
+    "functionApp": {
       "type": "Microsoft.Web/sites",
       "apiVersion": "2024-04-01",
       "name": "[variables('functionAppName')]",
@@ -211,7 +458,7 @@
           "deployment": {
             "storage": {
               "type": "blobContainer",
-              "value": "[format('{0}{1}', reference(resourceId('Microsoft.Storage/storageAccounts', variables('storageName')), '2023-05-01').primaryEndpoints.blob, variables('deployContainerName'))]",
+              "value": "[format('{0}{1}', reference('storageAccount').primaryEndpoints.blob, variables('deployContainerName'))]",
               "authentication": {
                 "type": "SystemAssignedIdentity"
               }
@@ -219,7 +466,7 @@
           },
           "scaleAndConcurrency": {
             "maximumInstanceCount": 40,
-            "instanceMemoryMB": 2048
+            "instanceMemoryMB": "[variables('instanceMemoryMB')]"
           },
           "runtime": {
             "name": "python",
@@ -233,20 +480,40 @@
               "value": "[variables('storageName')]"
             },
             {
+              "name": "AzureWebJobsStorage__credential",
+              "value": "managedidentity"
+            },
+            {
+              "name": "AzureWebJobsStorage__queueServiceUri",
+              "value": "[reference('storageAccount').primaryEndpoints.queue]"
+            },
+            {
+              "name": "AzureWebJobsStorage__blobServiceUri",
+              "value": "[reference('storageAccount').primaryEndpoints.blob]"
+            },
+            {
+              "name": "AzureWebJobsStorage__tableServiceUri",
+              "value": "[reference('storageAccount').primaryEndpoints.table]"
+            },
+            {
               "name": "FUNCTIONS_EXTENSION_VERSION",
               "value": "~4"
             },
             {
-              "name": "APPINSIGHTS_INSTRUMENTATIONKEY",
-              "value": "[reference(resourceId('Microsoft.Insights/components', variables('appInsightsName')), '2020-02-02').InstrumentationKey]"
+              "name": "AzureWebJobsFeatureFlags",
+              "value": "EnableWorkerIndexing"
+            },
+            {
+              "name": "PYTHON_ENABLE_INIT_INDEXING",
+              "value": "1"
             },
             {
               "name": "APPLICATIONINSIGHTS_CONNECTION_STRING",
-              "value": "[reference(resourceId('Microsoft.Insights/components', variables('appInsightsName')), '2020-02-02').ConnectionString]"
+              "value": "[reference('appInsights').ConnectionString]"
             },
             {
               "name": "TENANT_ID",
-              "value": "[parameters('tenantId')]"
+              "value": "[subscription().tenantId]"
             },
             {
               "name": "SHAREPOINT_SITE_URL",
@@ -254,43 +521,43 @@
             },
             {
               "name": "SHAREPOINT_LIBRARIES",
-              "value": "[parameters('sharePointLibraries')]"
+              "value": "[variables('sharePointLibraries')]"
+            },
+            {
+              "name": "SHAREPOINT_ROOT_PATHS",
+              "value": "[variables('sharePointRootPaths')]"
             },
             {
               "name": "SEARCH_ENDPOINT",
-              "value": "[parameters('searchEndpoint')]"
+              "value": "[variables('searchEndpoint')]"
             },
             {
               "name": "SEARCH_INDEX_NAME",
-              "value": "[parameters('searchIndexName')]"
-            },
-            {
-              "name": "FOUNDRY_ENDPOINT",
-              "value": "[parameters('foundryEndpoint')]"
-            },
-            {
-              "name": "FOUNDRY_EMBEDDING_DEPLOYMENT",
-              "value": "[parameters('foundryEmbeddingDeployment')]"
-            },
-            {
-              "name": "FOUNDRY_EMBEDDING_DIMENSIONS",
-              "value": "[parameters('foundryEmbeddingDimensions')]"
+              "value": "[variables('searchIndexName')]"
             },
             {
               "name": "INDEXED_EXTENSIONS",
-              "value": "[parameters('indexedExtensions')]"
-            },
-            {
-              "name": "INCREMENTAL_MINUTES",
-              "value": "[parameters('incrementalMinutes')]"
+              "value": "[variables('indexedExtensions')]"
             },
             {
               "name": "INDEXER_SCHEDULE",
-              "value": "[parameters('indexerSchedule')]"
+              "value": "[variables('indexerSchedule')]"
+            },
+            {
+              "name": "PROCESSING_MODE",
+              "value": "[variables('processingMode')]"
+            },
+            {
+              "name": "START_DATE",
+              "value": "[variables('startDate')]"
+            },
+            {
+              "name": "FUNCTION_PROCESSING_MODE",
+              "value": "[variables('functionProcessingMode')]"
             },
             {
               "name": "MAX_FILE_SIZE_MB",
-              "value": "100"
+              "value": "[string(variables('maxFileSizeMb'))]"
             },
             {
               "name": "MAX_CONCURRENCY",
@@ -303,104 +570,303 @@
             {
               "name": "CHUNK_OVERLAP",
               "value": "200"
+            },
+            {
+              "name": "VECTORISE_CONCURRENCY",
+              "value": "[string(variables('vectoriseConcurrency'))]"
+            },
+            {
+              "name": "MULTIMODAL_MAX_IN_FLIGHT",
+              "value": "[string(variables('multimodalMaxInFlight'))]"
+            },
+            {
+              "name": "RECONCILE_EVERY_N_RUNS",
+              "value": "[string(variables('reconcileEveryNRuns'))]"
+            },
+            {
+              "name": "STATE_CONTAINER",
+              "value": "[variables('stateContainerName')]"
+            },
+            {
+              "name": "INDEXER_QUEUE_NAME",
+              "value": "[variables('indexerQueueName')]"
+            },
+            {
+              "name": "FAILED_FILES_TABLE",
+              "value": "[variables('failedFilesTableName')]"
+            },
+            {
+              "name": "RUN_STATE_TABLE",
+              "value": "[variables('runStateTableName')]"
+            },
+            {
+              "name": "WATERMARK_TABLE",
+              "value": "[variables('watermarkTableName')]"
+            },
+            {
+              "name": "BACKUP_SCHEDULE",
+              "value": "[variables('backupSchedule')]"
+            },
+            {
+              "name": "BACKUP_CONTAINER",
+              "value": "[variables('backupContainerName')]"
+            },
+            {
+              "name": "BACKUP_RETENTION_DAYS",
+              "value": "[string(variables('backupRetentionDays'))]"
+            },
+            {
+              "name": "MULTIMODAL_ENDPOINT",
+              "value": "[variables('foundryEndpoint')]"
+            },
+            {
+              "name": "MULTIMODAL_MODEL_VERSION",
+              "value": "[variables('multimodalModelVersion')]"
+            },
+            {
+              "name": "DOCINTEL_ENDPOINT",
+              "value": "[variables('docIntelEndpoint')]"
+            },
+            {
+              "name": "IMAGES_CONTAINER",
+              "value": "[variables('imagesContainerName')]"
+            },
+            {
+              "name": "EXTRACT_IMAGES",
+              "value": "[if(variables('extractImages'), 'true', 'false')]"
+            },
+            {
+              "name": "API_AUDIENCE",
+              "value": "[if(parameters('enableSecurityTrimming'), if(variables('shouldCreateAppRegistration'), reference('apiApp').appId, variables('suppliedClientId')), '')]"
+            },
+            {
+              "name": "ALWAYS_ALLOWED_IDS",
+              "value": "[variables('alwaysAllowedIds')]"
+            },
+            {
+              "name": "KEY_VAULT_URI",
+              "value": "[reference('keyVault').vaultUri]"
             }
           ]
         }
       },
       "dependsOn": [
-        "[resourceId('Microsoft.Insights/components', variables('appInsightsName'))]",
-        "[resourceId('Microsoft.Web/serverfarms', format('{0}-plan', parameters('baseName')))]",
-        "[resourceId('Microsoft.Storage/storageAccounts', variables('storageName'))]"
+        "apiApp",
+        "appInsights",
+        "flexPlan",
+        "keyVault",
+        "storageAccount"
       ]
     },
-    {
+    "searchDataContributorAssignment": {
       "type": "Microsoft.Authorization/roleAssignments",
       "apiVersion": "2022-04-01",
       "scope": "[resourceId('Microsoft.Search/searchServices', variables('searchServiceName'))]",
       "name": "[guid(resourceId('Microsoft.Search/searchServices', variables('searchServiceName')), variables('searchDataContributorRoleId'), resourceId('Microsoft.Web/sites', variables('functionAppName')))]",
       "properties": {
         "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', variables('searchDataContributorRoleId'))]",
-        "principalId": "[reference(resourceId('Microsoft.Web/sites', variables('functionAppName')), '2024-04-01', 'full').identity.principalId]",
+        "principalId": "[reference('functionApp', '2024-04-01', 'full').identity.principalId]",
         "principalType": "ServicePrincipal"
       },
       "dependsOn": [
-        "[resourceId('Microsoft.Web/sites', variables('functionAppName'))]"
+        "functionApp",
+        "searchService"
       ]
     },
-    {
+    "searchServiceContributorAssignment": {
       "type": "Microsoft.Authorization/roleAssignments",
       "apiVersion": "2022-04-01",
       "scope": "[resourceId('Microsoft.Search/searchServices', variables('searchServiceName'))]",
       "name": "[guid(resourceId('Microsoft.Search/searchServices', variables('searchServiceName')), variables('searchServiceContributorRoleId'), resourceId('Microsoft.Web/sites', variables('functionAppName')))]",
       "properties": {
         "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', variables('searchServiceContributorRoleId'))]",
-        "principalId": "[reference(resourceId('Microsoft.Web/sites', variables('functionAppName')), '2024-04-01', 'full').identity.principalId]",
+        "principalId": "[reference('functionApp', '2024-04-01', 'full').identity.principalId]",
         "principalType": "ServicePrincipal"
       },
       "dependsOn": [
-        "[resourceId('Microsoft.Web/sites', variables('functionAppName'))]"
+        "functionApp",
+        "searchService"
       ]
     },
-    {
+    "foundryAssignment": {
       "type": "Microsoft.Authorization/roleAssignments",
       "apiVersion": "2022-04-01",
-      "scope": "[resourceId('Microsoft.CognitiveServices/accounts', variables('cognitiveAccountName'))]",
-      "name": "[guid(resourceId('Microsoft.CognitiveServices/accounts', variables('cognitiveAccountName')), variables('cognitiveServicesOpenAIUserRoleId'), resourceId('Microsoft.Web/sites', variables('functionAppName')))]",
+      "scope": "[resourceId('Microsoft.CognitiveServices/accounts', variables('foundryAccountName'))]",
+      "name": "[guid(resourceId('Microsoft.CognitiveServices/accounts', variables('foundryAccountName')), variables('cognitiveServicesUserRoleId'), resourceId('Microsoft.Web/sites', variables('functionAppName')))]",
       "properties": {
-        "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', variables('cognitiveServicesOpenAIUserRoleId'))]",
-        "principalId": "[reference(resourceId('Microsoft.Web/sites', variables('functionAppName')), '2024-04-01', 'full').identity.principalId]",
+        "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', variables('cognitiveServicesUserRoleId'))]",
+        "principalId": "[reference('functionApp', '2024-04-01', 'full').identity.principalId]",
         "principalType": "ServicePrincipal"
       },
       "dependsOn": [
-        "[resourceId('Microsoft.Web/sites', variables('functionAppName'))]"
+        "foundryAccount",
+        "functionApp"
       ]
     },
-    {
+    "searchToFoundryAssignment": {
+      "type": "Microsoft.Authorization/roleAssignments",
+      "apiVersion": "2022-04-01",
+      "scope": "[resourceId('Microsoft.CognitiveServices/accounts', variables('foundryAccountName'))]",
+      "name": "[guid(resourceId('Microsoft.CognitiveServices/accounts', variables('foundryAccountName')), variables('cognitiveServicesUserRoleId'), resourceId('Microsoft.Search/searchServices', variables('searchServiceName')))]",
+      "properties": {
+        "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', variables('cognitiveServicesUserRoleId'))]",
+        "principalId": "[reference('searchService', '2024-06-01-preview', 'full').identity.principalId]",
+        "principalType": "ServicePrincipal"
+      },
+      "dependsOn": [
+        "foundryAccount",
+        "searchService"
+      ]
+    },
+    "docIntelAssignment": {
+      "type": "Microsoft.Authorization/roleAssignments",
+      "apiVersion": "2022-04-01",
+      "scope": "[resourceId('Microsoft.CognitiveServices/accounts', variables('docIntelName'))]",
+      "name": "[guid(resourceId('Microsoft.CognitiveServices/accounts', variables('docIntelName')), variables('cognitiveServicesUserRoleId'), resourceId('Microsoft.Web/sites', variables('functionAppName')))]",
+      "properties": {
+        "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', variables('cognitiveServicesUserRoleId'))]",
+        "principalId": "[reference('functionApp', '2024-04-01', 'full').identity.principalId]",
+        "principalType": "ServicePrincipal"
+      },
+      "dependsOn": [
+        "docIntel",
+        "functionApp"
+      ]
+    },
+    "storageBlobDataOwnerAssignment": {
       "type": "Microsoft.Authorization/roleAssignments",
       "apiVersion": "2022-04-01",
       "scope": "[resourceId('Microsoft.Storage/storageAccounts', variables('storageName'))]",
       "name": "[guid(resourceId('Microsoft.Storage/storageAccounts', variables('storageName')), variables('storageBlobDataOwnerRoleId'), resourceId('Microsoft.Web/sites', variables('functionAppName')))]",
       "properties": {
         "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', variables('storageBlobDataOwnerRoleId'))]",
-        "principalId": "[reference(resourceId('Microsoft.Web/sites', variables('functionAppName')), '2024-04-01', 'full').identity.principalId]",
+        "principalId": "[reference('functionApp', '2024-04-01', 'full').identity.principalId]",
         "principalType": "ServicePrincipal"
       },
       "dependsOn": [
-        "[resourceId('Microsoft.Web/sites', variables('functionAppName'))]",
-        "[resourceId('Microsoft.Storage/storageAccounts', variables('storageName'))]"
+        "functionApp",
+        "storageAccount"
       ]
     },
-    {
+    "storageAccountContributorAssignment": {
       "type": "Microsoft.Authorization/roleAssignments",
       "apiVersion": "2022-04-01",
       "scope": "[resourceId('Microsoft.Storage/storageAccounts', variables('storageName'))]",
       "name": "[guid(resourceId('Microsoft.Storage/storageAccounts', variables('storageName')), variables('storageAccountContributorRoleId'), resourceId('Microsoft.Web/sites', variables('functionAppName')))]",
       "properties": {
         "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', variables('storageAccountContributorRoleId'))]",
-        "principalId": "[reference(resourceId('Microsoft.Web/sites', variables('functionAppName')), '2024-04-01', 'full').identity.principalId]",
+        "principalId": "[reference('functionApp', '2024-04-01', 'full').identity.principalId]",
         "principalType": "ServicePrincipal"
       },
       "dependsOn": [
-        "[resourceId('Microsoft.Web/sites', variables('functionAppName'))]",
-        "[resourceId('Microsoft.Storage/storageAccounts', variables('storageName'))]"
+        "functionApp",
+        "storageAccount"
       ]
     },
-    {
+    "storageQueueDataContributorAssignment": {
       "type": "Microsoft.Authorization/roleAssignments",
       "apiVersion": "2022-04-01",
       "scope": "[resourceId('Microsoft.Storage/storageAccounts', variables('storageName'))]",
       "name": "[guid(resourceId('Microsoft.Storage/storageAccounts', variables('storageName')), variables('storageQueueDataContributorRoleId'), resourceId('Microsoft.Web/sites', variables('functionAppName')))]",
       "properties": {
         "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', variables('storageQueueDataContributorRoleId'))]",
-        "principalId": "[reference(resourceId('Microsoft.Web/sites', variables('functionAppName')), '2024-04-01', 'full').identity.principalId]",
+        "principalId": "[reference('functionApp', '2024-04-01', 'full').identity.principalId]",
         "principalType": "ServicePrincipal"
       },
       "dependsOn": [
-        "[resourceId('Microsoft.Web/sites', variables('functionAppName'))]",
-        "[resourceId('Microsoft.Storage/storageAccounts', variables('storageName'))]"
+        "functionApp",
+        "storageAccount"
+      ]
+    },
+    "storageTableDataContributorAssignment": {
+      "type": "Microsoft.Authorization/roleAssignments",
+      "apiVersion": "2022-04-01",
+      "scope": "[resourceId('Microsoft.Storage/storageAccounts', variables('storageName'))]",
+      "name": "[guid(resourceId('Microsoft.Storage/storageAccounts', variables('storageName')), variables('storageTableDataContributorRoleId'), resourceId('Microsoft.Web/sites', variables('functionAppName')))]",
+      "properties": {
+        "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', variables('storageTableDataContributorRoleId'))]",
+        "principalId": "[reference('functionApp', '2024-04-01', 'full').identity.principalId]",
+        "principalType": "ServicePrincipal"
+      },
+      "dependsOn": [
+        "functionApp",
+        "storageAccount"
+      ]
+    },
+    "keyVaultSecretsUserAssignment": {
+      "type": "Microsoft.Authorization/roleAssignments",
+      "apiVersion": "2022-04-01",
+      "scope": "[resourceId('Microsoft.KeyVault/vaults', variables('keyVaultName'))]",
+      "name": "[guid(resourceId('Microsoft.KeyVault/vaults', variables('keyVaultName')), variables('keyVaultSecretsUserRoleId'), resourceId('Microsoft.Web/sites', variables('functionAppName')))]",
+      "properties": {
+        "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', variables('keyVaultSecretsUserRoleId'))]",
+        "principalId": "[reference('functionApp', '2024-04-01', 'full').identity.principalId]",
+        "principalType": "ServicePrincipal"
+      },
+      "dependsOn": [
+        "functionApp",
+        "keyVault"
+      ]
+    },
+    "deployerWebsiteRole": {
+      "type": "Microsoft.Authorization/roleAssignments",
+      "apiVersion": "2022-04-01",
+      "scope": "[resourceId('Microsoft.Web/sites', variables('functionAppName'))]",
+      "name": "[guid(resourceId('Microsoft.Web/sites', variables('functionAppName')), variables('websiteContributorRoleId'), resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-deployer-{1}', parameters('baseName'), variables('nameSuffix'))))]",
+      "properties": {
+        "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', variables('websiteContributorRoleId'))]",
+        "principalId": "[reference('deployerIdentity').principalId]",
+        "principalType": "ServicePrincipal"
+      },
+      "dependsOn": [
+        "deployerIdentity",
+        "functionApp"
+      ]
+    },
+    "publishCode": {
+      "type": "Microsoft.Resources/deploymentScripts",
+      "apiVersion": "2023-08-01",
+      "name": "[format('{0}-publish-code', parameters('baseName'))]",
+      "location": "[parameters('location')]",
+      "kind": "AzureCLI",
+      "identity": {
+        "type": "UserAssigned",
+        "userAssignedIdentities": {
+          "[format('{0}', resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-deployer-{1}', parameters('baseName'), variables('nameSuffix'))))]": {}
+        }
+      },
+      "properties": {
+        "azCliVersion": "2.65.0",
+        "timeout": "PT30M",
+        "retentionInterval": "PT1H",
+        "cleanupPreference": "OnExpiration",
+        "environmentVariables": [
+          {
+            "name": "PACKAGE_URL",
+            "value": "[variables('packageReleaseUrl')]"
+          },
+          {
+            "name": "FUNCTION_APP_NAME",
+            "value": "[variables('functionAppName')]"
+          },
+          {
+            "name": "RESOURCE_GROUP",
+            "value": "[resourceGroup().name]"
+          },
+          {
+            "name": "SUBSCRIPTION_ID",
+            "value": "[subscription().subscriptionId]"
+          }
+        ],
+        "scriptContent": "      set -eu\n      set -o pipefail\n\n      echo \"=== Downloading package zip from $PACKAGE_URL ===\"\n      curl -sSL --fail -o /tmp/package.zip \"$PACKAGE_URL\"\n      SIZE=$(stat -c%s /tmp/package.zip)\n      echo \"Downloaded $SIZE bytes\"\n\n      ARM_BASE=\"https://management.azure.com/subscriptions/$SUBSCRIPTION_ID/resourceGroups/$RESOURCE_GROUP/providers/Microsoft.Web/sites/$FUNCTION_APP_NAME\"\n      echo \"=== Waiting for $FUNCTION_APP_NAME state == Running ===\"\n      STATE=\"\"\n      for i in $(seq 1 60); do\n        STATE=$(az rest --method get --url \"$ARM_BASE?api-version=2024-04-01\" --query \"properties.state\" -o tsv 2>/dev/null || echo \"\")\n        echo \"Probe $i: state=$STATE\"\n        if [ \"$STATE\" = \"Running\" ]; then\n          break\n        fi\n        sleep 10\n      done\n      if [ \"$STATE\" != \"Running\" ]; then\n        echo \"WARNING: site state never became Running (last=$STATE); will still attempt deploy\"\n      fi\n      sleep 30\n\n      echo \"=== Deploying via 'az functionapp deployment source config-zip' ===\"\n      DEPLOY_OK=\"\"\n      for i in 1 2 3 4 5; do\n        echo \"Deploy attempt $i\"\n        if az functionapp deployment source config-zip \\\n              --resource-group \"$RESOURCE_GROUP\" \\\n              --name \"$FUNCTION_APP_NAME\" \\\n              --src /tmp/package.zip \\\n              --build-remote true \\\n              --timeout 600 2>&1; then\n          DEPLOY_OK=\"yes\"\n          break\n        fi\n        echo \"Attempt $i failed; sleeping 30s\"\n        sleep 30\n      done\n\n      if [ -z \"$DEPLOY_OK\" ]; then\n        echo \"=== Fallback: POST https://$FUNCTION_APP_NAME.azurewebsites.net/api/publish ===\"\n        TOKEN=$(az account get-access-token --resource https://management.azure.com --query accessToken -o tsv)\n        HTTP=\"\"\n        for i in 1 2 3 4 5; do\n          echo \"Fallback attempt $i\"\n          HTTP=$(curl -sS -o /tmp/resp.txt -w \"%{http_code}\" \\\n                 -X POST \"https://$FUNCTION_APP_NAME.azurewebsites.net/api/publish?RemoteBuild=true\" \\\n                 -H \"Authorization: Bearer $TOKEN\" \\\n                 -H \"Content-Type: application/zip\" \\\n                 --data-binary @/tmp/package.zip || echo \"000\")\n          echo \"HTTP $HTTP\"\n          if [ \"$HTTP\" = \"200\" ] || [ \"$HTTP\" = \"202\" ]; then\n            DEPLOY_OK=\"yes\"\n            break\n          fi\n          echo \"Response body:\"; cat /tmp/resp.txt; echo\n          sleep 30\n        done\n      fi\n\n      if [ -z \"$DEPLOY_OK\" ]; then\n        echo \"ERROR: code deploy failed via both 'az functionapp deployment source config-zip' and POST /api/publish.\" >&2\n        echo \"Resources are provisioned correctly. Finish the deploy manually:\" >&2\n        echo \"  cd accelerators/sharepoint-connector\" >&2\n        echo \"  func azure functionapp publish $FUNCTION_APP_NAME --python --build remote\" >&2\n        echo \"See README section S1 for details.\" >&2\n        exit 1\n      fi\n      echo \"Code deploy succeeded. Flex will recreate workers and sync triggers.\"\n    "
+      },
+      "dependsOn": [
+        "deployerIdentity",
+        "deployerWebsiteRole",
+        "functionApp"
       ]
     }
-  ],
+  },
   "outputs": {
     "functionAppName": {
       "type": "string",
@@ -408,7 +874,39 @@
     },
     "functionAppPrincipalId": {
       "type": "string",
-      "value": "[reference(resourceId('Microsoft.Web/sites', variables('functionAppName')), '2024-04-01', 'full').identity.principalId]"
+      "value": "[reference('functionApp', '2024-04-01', 'full').identity.principalId]"
+    },
+    "storageAccountName": {
+      "type": "string",
+      "value": "[variables('storageName')]"
+    },
+    "searchEndpoint": {
+      "type": "string",
+      "value": "[variables('searchEndpoint')]"
+    },
+    "foundryEndpoint": {
+      "type": "string",
+      "value": "[variables('foundryEndpoint')]"
+    },
+    "docIntelEndpoint": {
+      "type": "string",
+      "value": "[variables('docIntelEndpoint')]"
+    },
+    "keyVaultName": {
+      "type": "string",
+      "value": "[variables('keyVaultName')]"
+    },
+    "securityTrimmingEnabled": {
+      "type": "bool",
+      "value": "[parameters('enableSecurityTrimming')]"
+    },
+    "apiAudience": {
+      "type": "string",
+      "value": "[if(parameters('enableSecurityTrimming'), if(variables('shouldCreateAppRegistration'), reference('apiApp').appId, variables('suppliedClientId')), '')]"
+    },
+    "apiAppDisplayName": {
+      "type": "string",
+      "value": "[if(variables('shouldCreateAppRegistration'), reference('apiApp').displayName, if(parameters('enableSecurityTrimming'), 'pre-created (apiAudience parameter supplied)', 'security trimming disabled — no app registration'))]"
     }
   }
 }

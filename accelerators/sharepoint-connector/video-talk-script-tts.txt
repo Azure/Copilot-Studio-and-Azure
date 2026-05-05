@@ -1,0 +1,194 @@
+Hi everyone. 
+
+In this video, I'll walk you through the SharePoint to Azure AI Search connector accelerator, which can be used to overcome limitations on the Copilot Studio SharePoint connector and on the SharePoint Connector of Azure AI Search in preview.
+
+It's a push connector that keeps an Azure AI Search index in sync with a selected SharePoint site or a specific folder, and wires that index into a Copilot Studio agent.
+
+The accelerator also handles multimodal content, handling text and images in the same retrieval. It propagates file status changes from the source, supports large files, manages rate limits, and runs nightly backups. 
+
+By the end you'll understand the architecture, know how to deploy it, and see it working end to end.
+
+== part 2
+Architecture overview.
+
+Let me walk you through the architecture.
+
+There are two main flows: the ingestion pipeline at the top, and the retrieval flow at the bottom.
+
+On the left is SharePoint Online. We point the connector at one site, one library, or even one folder inside a library. Least-privilege access is enforced using Graph's Sites.Selected permission, where we grant the Function App's managed identity read access on this selected site only.
+
+The ingestion pipeline is queue-fed. Every hour, a timer-triggered dispatcher asks Graph's delta endpoint what's changed since the last run, including deletions. For each new or modified file, it enqueues one message on the queue. For each deleted file, it removes the corresponding chunks from the search index immediately. The per-drive delta token gets persisted, so the next run picks up where this one left off.
+
+Queue-triggered workers scale out independently, up to 40 instances. Each worker takes one message, streams the file to a temporary file so we stay memory-bounded even on 500 megabyte PDFs, routes it through extraction, chunks the content, and embeds every chunk.
+
+Extraction has two routes. If Azure AI Document Intelligence is configured, PDFs and Office files go through its prebuilt-layout model. That gives us reading-order paragraphs, tables, and figures with cropped image bytes and bounding polygons. Standalone image files and plain-text formats use simpler paths.
+
+Embedding is the unified multimodal part. Every chunk, whether text or image, goes through Azure AI Vision multimodal embeddings, the Florence model. It produces 1024-dimensional vectors that live in the same vector space for both modalities. That means a text query like "our Q3 revenue chart" can match the slide containing the chart, not just text that mentions Q3.
+
+The index itself has one vector field called content embedding. Each chunk carries content text, a flag for whether it has an image, and location metadata such as page number and bounding polygon. We also store image crops in a dedicated blob container, so Copilot Studio can render them as citation thumbnails.
+
+At the bottom, the retrieval flow. A Copilot Studio agent running in generative-orchestration mode connects directly to the AI Search index using its built-in Azure AI Search Knowledge Source connector. There's no custom topic, no HTTP action, no Entra app, and no Power Platform connection. Copilot Studio runs hybrid queries, that's vector plus keyword, with the semantic ranker against the SharePoint index. The language model grounds its answers on the returned chunks, with citations back to the SharePoint source files.
+
+== part 3
+There are four key design decisions.
+
+First, unified multimodal embeddings. One vector field, one hybrid query, and cross-modal retrieval works natively. No dual-vector complexity.
+
+Second, queue-based scale-out. The dispatcher does the discovery, and workers do the heavy lifting in parallel. Poison-queue handling is automatic, and per-file failure counters live in a table, so we don't retry the same doomed file forever.
+
+Third, zero secrets. Every Azure service call uses managed identity. If you need a client-secret fallback for Graph, the Bicep optionally provisions a Key Vault, and the app setting becomes a Key Vault reference, never a plain-text secret.
+
+Fourth, used built-in AI Search integration in Copilot Studio. The agent talks directly to the index through the native Azure AI Search Knowledge Source connector. However, if you would like to extend the architecture with per-user access filtering of the grounding information. You will need to create a custom connector to interact with the Azure AI Search to filter by permission id.
+
+== part 4
+Let's move to the deployment. 
+
+For the default deployment you need: 
+an Azure subscription where you hold required priviledge on the target resource group
+The Azure CLI and PowerShell 7 or higher on your workstation for post deployment steps.
+A SharePoint Online site with documents in it, and a SharePoint Administrator or Global Administrator account to grant the Function App's managed identity per-site read access after deployment. 
+An App Registration that we will use to assign SharePoint access and associate it with the Azure function dispatcher function
+Lastly, a Copilot Studio environment with the environment maker role to add the AI Search index as a Knowledge Source on your agent.
+
+The fastest path is the Deploy to Azure button. The template asks for just two values. First, a base name, a short prefix like "sp-indexer". A six-character uniqueness hash is appended where Azure requires globally-unique names. Second, the SharePoint site URL, the full URL of your SharePoint site.
+
+Click Review and Create. Deployment takes about five minutes. 
+
+Behind the scenes it creates the Function App on Flex Consumption, the Storage account with all queue, table, and blob containers, Log Analytics and Application Insights, Azure AI Search on the Basic tier, Microsoft Foundry, also known as Azure AI Services multi-service, for the Vision multimodal embedder, Document Intelligence for Layout extraction, Key Vault, and every RBAC role assignment on the Function App's managed identity. 
+
+It also provisions the AI Search index schema via an inline ARM deployment script. And it pulls the latest CI-built function-app package from GitHub Releases and pushes it through the Flex publish endpoint, so the code is registered and running by the time the deployment finishes.
+
+Grant Sites.Selected for least privilege.
+
+There's one mandatory manual post deployment step. Granting the Function's managed identity read access on just our target site. This requires SharePoint Administrator or Global Administrator, and it uses the Microsoft Graph PowerShell SDK, because the per-site grant endpoint requires Sites.FullControl.All, which the Azure CLI's first-party token doesn't carry.
+
+Open a PowerShell 7 window. Windows PowerShell 5 won't work. Then run the grant-site-permission script with your site URL and Function App name. The script auto-installs the two Graph sub-modules it needs in CurrentUser scope. That takes about 30 seconds and 25 megabytes. It prompts you to consent in the browser, then grants read access. 
+
+Wait two to ten minutes for Azure Active Directory propagation. Then we're ready to wire up Copilot Studio.
+
+== part 5
+
+In the Copilot Studio agent we want to ground, turn off the generative knowledge and grounding with web data. Then, go to Knowledge, then Add knowledge, then Azure AI Search. 
+
+Create a new connection. Provide the Azure AI Search Endpoint and the Key that you copy from the resource.
+
+Select the "sharepoint-index".
+
+The agent is now ready to retrieve the grounded chunks from the index using vector, keyword, and semantic ranker through Copilot Studio's built-in connector. 
+
+Lets move to testing by adding some sample test data to the configured sharepoint site.
+
+If you don't already have SharePoint content to test with, the README's Testing section points at Microsoft's public azure-search-sample-data repository on GitHub. 
+
+Different folders in the repo exercise different parts of the pipeline in just a few minutes. Drop a few PDFs into your SharePoint site's Documents library.
+
+Change the processing mode to full and Trigger a one-off run by firing the dispatcher manually. 
+
+The dispatcher calls Graph's delta endpoint, finds the new files, and enqueues one message per file onto the indexer queue. 
+
+Workers scale out and process them in parallel: stream download, Document Intelligence Layout extraction, multimodal embedding, push to AI Search.
+
+Confirm documents landed.
+
+To verify, go to the search service, then Search explorer, and run a wildcard query against the SharePoint index. You'll see chunk ID, parent ID, title, source URL, the content text, and the 1024-dimension content embedding vector. 
+
+== part 6
+
+Let's test the agent.
+
+Ask it a question whose answer is in one of the indexed PDFs. For example: "What does Chief Finance Officer do?".
+
+The agent responds with a grounded answer and a citation pointing back to the SharePoint file URL. Click the citation. SharePoint opens the file with its own permission check.
+
+Delete one of those PDFs in SharePoint. Trigger the dispatcher again. Ask the same question.
+
+The citation is gone. Graph's delta query reported the deletion, and the dispatcher removed the chunks from the index. 
+
+
+== part 7
+
+The setup is complete. Now let's spend some quality time in the portal showing you exactly where to look when something needs attention. 
+
+Production data ingestion is never deploy and forget. 
+
+I'll cover three views: the Function App for execution telemetry, the Storage Account for queue and state inspection, and Application Insights for KQL-driven deep dives. 
+
+Everything I'll show maps directly to the troubleshooting matrix in the README.
+
+Open the resource group and click the Function App. Land on the Overview blade. Note the plan type, Flex Consumption. Status, Running. Memory, 4096 megabytes per instance. The default domain ends in azurewebsites dot net. That's where the backup endpoint and the indexer-timer admin trigger are served.
+
+Click Functions in the left navigation, then Functions. You should see five entries.
+
+First, the indexer timer. A timer trigger that runs hourly. This is the dispatcher.
+
+Second, the worker. A queue trigger on the indexer queue. Processes one file per invocation.
+
+Third, the poison handler. A queue trigger on the poison queue. Records terminal failures.
+
+Fourth, the backup timer. A timer trigger, runs daily at 3 AM UTC.
+
+Fifth, the manual backup. An HTTP trigger at the backup endpoint for on-demand backups.
+
+If this list is empty after a fresh deploy, that's the canonical Flex Consumption "zero functions" symptom. The runtime didn't pick up the package. The README's troubleshooting entry S1 has the one-line publish fix.
+
+Click the indexer timer. The function detail blade has three tabs that matter. Code and Test, where you can see the function source. Click Test/Run, then Run, to trigger the dispatcher right here, no command line needed. The HTTP output panel returns 202, queued. Monitor, where every invocation is listed with timestamp, duration, status, and a link to the full trace in Application Insights. Click any row to see the full execution log: which Graph endpoints it called, how many files it found, the run ID it assigned, the watermark advance. And Function Keys, the auth keys for HTTP-triggered functions and admin endpoints.
+
+Now for Log stream. Go back to the Function App level, then Monitoring, then Log stream. This is your real-time tail. Refresh once for a fresh WebSocket connection, then trigger a dispatcher run from another tab. You'll see, in order: the indexer timer executing, the SharePoint dispatcher triggered in queue mode, the SharePoint client using DefaultAzureCredential with managed identity, a new Graph access token acquired, an HTTP 200 response from the Graph sites endpoint, the delta listing on the drive, and a final line saying the run dispatched and enqueued, for example, three of three files.
+
+Then within a few seconds, three concurrent worker invocations: each one executing on a new queue message, streaming the download to a temp file, running Document Intelligence prebuilt-layout on the file, vectorising the chunks, pushing chunks plus vectors to AI Search, and finally completing successfully with a duration of about eleven seconds.
+
+Log stream is the single most useful view on Flex Consumption. Application Insights ingestion lags one to three minutes. Log stream is live. Anytime something seems stuck, this is where to look first.
+
+Diagnose and solve problems is a built-in diagnostic blade. It surfaces common configuration issues like failed deploys, scale failures, and managed identity auth problems, without you needing to write KQL. A good first stop for "something's off but I'm not sure what".
+
+Configuration, then Environment variables, lists all forty or so app settings the connector reads. The SharePoint site URL, the search endpoint, the multimodal endpoint, the indexer schedule, the AzureWebJobsStorage managed-identity settings, and so on. Change one here and it takes effect on the next worker recreate, about thirty seconds. The README's "Post-deployment tuning" table calls out the ones you'll commonly touch: SharePoint libraries, processing mode, vectorise concurrency, and backup retention days.
+
+== part 8
+
+
+Open the Storage Account. It holds all the connector's runtime state: queues, tables, and blobs.
+
+Open Storage browser. This is the unified UI. Blob containers, file shares, queues, and tables, all in one tree.
+
+Click into Queues, then the indexer queue. Switch authentication to Microsoft Entra user account at the top. You'll need the Storage Queue Data Reader role on yourself for read-only browsing. The README's diagnostic toolkit shows the one-liner to grant it.
+
+The queue lists every pending file message. Each message has an insertion time, when the dispatcher enqueued it. An expiration time, seven days by default. Messages auto-disappear after that. A dequeue count, how many times a worker has tried this message. Zero means workers haven't picked it up yet. Above zero means workers are pulling but failing. At a max dequeue count of five, set in host.json, the message moves to the poison queue. And the message text, the JSON body containing run ID, drive ID, item ID, name, size, web URL, and last modified.
+
+The poison queue uses the same UI. But anything here failed five times. Click any message to see the body and figure out which file it was. The companion failedFiles table, which we'll see in a second, has the actual error text.
+
+If the indexer queue accumulates messages with dequeue count zero and never drains, the scale controller isn't waking workers. The most likely cause is the Flex managed-identity service-URI gap, covered in the README's troubleshooting entry S2. The fix is in the Bicep, but documented for any drifted deployments.
+
+Now, Tables. Three tables track operational state.
+
+First, runState. One row per dispatcher run. Columns include the run UUID, started at, expected files enqueued, completed workers that succeeded, failed workers, and completed at, the timestamp when the run wrapped, which is empty while in flight. This is your "was the last run successful, and how many files did it touch" answer.
+
+Second, failedFiles. Files that exhausted retry attempts. Columns include the item ID, failure count, last error text, and last seen timestamp. Open a row, copy the last error. That's the actual exception text the worker hit. Common values include streaming-download failed after five retries, which usually means a Graph 403 from a Sites.Selected gap. Or upload failed with status Forbidden, which usually means an AI Search RBAC gap, covered in the README's troubleshooting entry S4.
+
+Third, watermark. A single-row table with the timestamp of the last successful run. Used as the floor for since-last-run mode if delta tokens get reset.
+
+Now, Blob containers. Six relevant ones.
+
+First, app-package. The Function App's deployment zip. The runtime mounts whatever's here as the function code. Updated by the Bicep publish-code deployment script via the Flex publish endpoint, or by the func azure functionapp publish command for manual redeploys.
+
+Second, images. Image crops extracted by Document Intelligence Layout, named by document hash, page, and index. Copilot Studio renders these as citation thumbnails.
+
+Third, backup. Nightly index dumps. Each daily folder, named by date, contains the index schema, the documents, the watermarks, and the failed files in JSON-lines format. Retention defaults to seven days, governed by the backup retention days setting.
+
+Fourth, state. Currently reserved for future large-state dumps. Empty by design.
+
+
+== part 9
+
+When portal blades aren't enough, for example, when you want to correlate dispatcher runs with worker failures across the last 24 hours, Application Insights and KQL is the answer. The README's troubleshooting section has the canonical queries. Let me describe the three I use most often.
+
+The first is pipeline activity over the last hour. It unions traces and exceptions, filters for messages containing key strings like dispatched run, worker, streaming download, upload, push chunks, freshness check, and vectorize, or anything where the item type is exception. Then it projects timestamp, item type, severity level, and a truncated message, ordered by timestamp descending. Run it, and you see every meaningful step from the latest dispatcher invocation, in order. If a stage is missing, that tells you where the pipeline broke.
+
+The second is worker exceptions only. The most actionable signal, because it strips out info traces. Filter the exceptions table to the last six hours, project timestamp, type, outer message, innermost message, problem ID, and operation name. Order by timestamp descending.
+
+The third is per-run completion ratio, useful for capacity planning. Filter traces over the last 24 hours where the message starts with "dispatched run", extract the run ID with a regex, and project timestamp, run ID, and message. Cross-reference with the runState table in storage, and you've got a full picture: what was enqueued versus what completed.
+
+A command-line shortcut. All of these run from the terminal too, with the az monitor app-insights query command. Useful when you're already in a terminal triaging an incident.
+
+The README's Troubleshooting Symptom matrix has 10 entries, S1 through S10, covering potential issues you may hit while extending this connector. 
+
+That's the SharePoint to Azure AI Search connector. Thanks for watching, and happy building.

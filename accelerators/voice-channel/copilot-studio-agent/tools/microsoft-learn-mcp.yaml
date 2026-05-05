@@ -1,0 +1,30 @@
+# Microsoft Learn MCP tool for Copilot Studio.
+#
+# The server is public, unauthenticated, and uses Streamable HTTP transport.
+# Reference: https://learn.microsoft.com/training/support/mcp
+
+schemaVersion: "1.0"
+kind: ModelContextProtocolTool
+name: "Microsoft Learn MCP"
+description: >
+  Searches and fetches Microsoft Learn documentation. Use this tool for every
+  factual question about Microsoft products, Azure services, Microsoft 365,
+  Power Platform, Dynamics 365, and developer topics.
+
+server:
+  transport: streamableHttp
+  url: "https://learn.microsoft.com/api/mcp"
+  # The Learn MCP server does not require auth. If your tenant requires a
+  # connection reference for all MCP tools, add a dummy "None" connector here.
+  authentication:
+    type: none
+
+# Microsoft Learn MCP exposes three tools. We want the agent to see all of them.
+allowedTools:
+  - "microsoft_docs_search"
+  - "microsoft_docs_fetch"
+  - "microsoft_code_sample_search"
+
+# Soft-rate-limit so a runaway voice session can't spam the server.
+rateLimit:
+  requestsPerMinute: 30

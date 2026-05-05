@@ -1,0 +1,15 @@
+# Minimal conversation-start topic.
+#
+# The agent is in generative mode, so scripted topics are optional. We keep
+# just this one so the first message from the bot is deterministic and short —
+# which matters for voice (no dead air while the LLM warms up).
+
+schemaVersion: "1.0"
+kind: Topic
+name: "Conversation Start"
+trigger: ConversationStart
+
+nodes:
+  - id: greet
+    kind: SendMessage
+    message: "Hello! Ask me anything covered by Microsoft Learn."

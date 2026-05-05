@@ -210,28 +210,158 @@ class SharePointClient:
         self,
         modified_since: datetime | None = None,
         extensions: list[str] | None = None,
+        root_paths: list[str] | None = None,
     ) -> list[dict]:
-        """List files across all target drives."""
+        """List files across all target drives.
+
+        When `root_paths` is empty, every target drive is scanned from its
+        root. When it contains folder paths (relative to drive root), each
+        drive is scanned only under those folders — useful for scoping the
+        indexer to a subset of the library.
+        """
         drives = self.get_target_drives()
         all_files: list[dict] = []
+        folders = root_paths or ["root"]
+
         for drive in drives:
             drive_id = drive["id"]
             drive_name = drive.get("name", drive_id)
-            files = self.list_files(drive_id, "root", modified_since, extensions)
-            logger.info(f"Drive '{drive_name}': found {len(files)} files")
-            for f in files:
-                f["_drive_id"] = drive_id
-                f["_drive_name"] = drive_name
-            all_files.extend(files)
+            for folder in folders:
+                files = self.list_files(drive_id, folder, modified_since, extensions)
+                logger.info(
+                    f"Drive '{drive_name}' folder '{folder}': found {len(files)} files"
+                )
+                for f in files:
+                    f["_drive_id"] = drive_id
+                    f["_drive_name"] = drive_name
+                all_files.extend(files)
+
         logger.info(f"Total files to index: {len(all_files)}")
         return all_files
+
+    # ------------------------------------------------------------------ #
+    # Delta-query listing — captures additions, modifications AND deletions
+    # ------------------------------------------------------------------ #
+
+    def list_changes_via_delta(
+        self,
+        drive_id: str,
+        delta_token: str | None,
+        extensions: list[str] | None = None,
+    ) -> tuple[list[dict], list[str], str | None]:
+        """Enumerate changes on a drive via the Graph delta query.
+
+        Args:
+            drive_id: Drive to monitor.
+            delta_token: Previous delta token (use the full @odata.deltaLink URL
+                OR just the token). Pass None on first run to get all items.
+            extensions: Optional extension filter (applied client-side).
+
+        Returns:
+            (modified_items, deleted_item_ids, next_delta_token)
+
+            * modified_items: new/modified file dicts with `_drive_id` added.
+            * deleted_item_ids: SharePoint item IDs that have been deleted.
+            * next_delta_token: the full @odata.deltaLink URL to persist for
+              the next run. None if the server didn't return one (rare; treat
+              as "retry full listing next time").
+        """
+        if delta_token:
+            url = delta_token if delta_token.startswith("http") else (
+                f"{GRAPH_BASE}/drives/{drive_id}/root/delta?token={delta_token}"
+            )
+        else:
+            url = f"{GRAPH_BASE}/drives/{drive_id}/root/delta"
+
+        modified: list[dict] = []
+        deleted: list[str] = []
+        next_token: str | None = None
+
+        while url:
+            data = self._get(url)
+            for item in data.get("value", []):
+                # Folders show up in delta too; skip them for indexing purposes.
+                if "folder" in item:
+                    continue
+
+                if "deleted" in item:
+                    # Soft or hard delete — either way the item is gone from
+                    # SharePoint's perspective.
+                    deleted.append(item["id"])
+                    continue
+
+                if "file" not in item:
+                    continue
+
+                name = item.get("name", "")
+                if extensions:
+                    ext = "." + name.rsplit(".", 1)[-1].lower() if "." in name else ""
+                    if ext not in extensions:
+                        continue
+
+                item["_drive_id"] = drive_id
+                modified.append(item)
+
+            # Pagination or end-of-stream
+            if "@odata.nextLink" in data:
+                url = data["@odata.nextLink"]
+            elif "@odata.deltaLink" in data:
+                next_token = data["@odata.deltaLink"]
+                url = None
+            else:
+                url = None
+
+        return modified, deleted, next_token
+
+    def list_changes_all_drives(
+        self,
+        delta_tokens: dict[str, str] | None = None,
+        extensions: list[str] | None = None,
+    ) -> tuple[list[dict], list[str], dict[str, str]]:
+        """Run `list_changes_via_delta` across every target drive.
+
+        Returns:
+            (all_modified, all_deleted_item_ids, new_delta_tokens_by_drive)
+        """
+        delta_tokens = delta_tokens or {}
+        drives = self.get_target_drives()
+        all_modified: list[dict] = []
+        all_deleted: list[str] = []
+        new_tokens: dict[str, str] = {}
+
+        for drive in drives:
+            drive_id = drive["id"]
+            drive_name = drive.get("name", drive_id)
+            token = delta_tokens.get(drive_id)
+            try:
+                modified, deleted, next_token = self.list_changes_via_delta(
+                    drive_id, token, extensions
+                )
+            except Exception as e:  # noqa: BLE001
+                logger.warning(f"Delta query failed for drive '{drive_name}': {e}")
+                continue
+
+            # Propagate drive_name metadata for UI / logging.
+            for f in modified:
+                f["_drive_name"] = drive_name
+
+            logger.info(
+                f"Drive '{drive_name}' delta: {len(modified)} modified, "
+                f"{len(deleted)} deleted"
+            )
+            all_modified.extend(modified)
+            all_deleted.extend(deleted)
+            if next_token:
+                new_tokens[drive_id] = next_token
+
+        return all_modified, all_deleted, new_tokens
 
     # ------------------------------------------------------------------
     # File download
     # ------------------------------------------------------------------
 
     def download_file(self, drive_id: str, item_id: str) -> bytes:
-        """Download file content from SharePoint with retry on transient errors."""
+        """Download file content fully into memory. Use download_file_to_path for large files."""
         url = f"{GRAPH_BASE}/drives/{drive_id}/items/{item_id}/content"
         max_retries = 5
         for attempt in range(max_retries):
@@ -249,6 +379,49 @@ class SharePointClient:
             resp.raise_for_status()
             return resp.content
         raise RuntimeError(f"Download failed after {max_retries} retries: {item_id}")
+
+    def download_file_to_path(
+        self,
+        drive_id: str,
+        item_id: str,
+        dest_path: str,
+        chunk_size: int = 4 * 1024 * 1024,
+    ) -> int:
+        """
+        Stream file content from SharePoint directly to a local path.
+        Memory-bounded regardless of file size.
+
+        Returns the number of bytes written.
+        """
+        url = f"{GRAPH_BASE}/drives/{drive_id}/items/{item_id}/content"
+        max_retries = 5
+        for attempt in range(max_retries):
+            try:
+                with self._http.stream(
+                    "GET", url, headers=self._headers(), follow_redirects=True
+                ) as resp:
+                    if resp.status_code == 429:
+                        retry_after = int(resp.headers.get("Retry-After", 5))
+                        logger.warning(f"Download rate limited (429). Retrying in {retry_after}s")
+                        time.sleep(retry_after)
+                        continue
+                    if resp.status_code >= 500:
+                        wait = min(2 ** attempt, 30)
+                        logger.warning(f"Download server error {resp.status_code}. Retrying in {wait}s")
+                        time.sleep(wait)
+                        continue
+                    resp.raise_for_status()
+                    total = 0
+                    with open(dest_path, "wb") as f:
+                        for chunk in resp.iter_bytes(chunk_size=chunk_size):
+                            f.write(chunk)
+                            total += len(chunk)
+                    return total
+            except httpx.HTTPError as e:
+                wait = min(2 ** attempt, 30)
+                logger.warning(f"Download transient error: {e}. Retrying in {wait}s")
+                time.sleep(wait)
+        raise RuntimeError(f"Streaming download failed after {max_retries} retries: {item_id}")
 
     # ------------------------------------------------------------------
     # Permissions (for security trimming)
@@ -293,7 +466,7 @@ class SharePointClient:
         include_content: bool = True,
         include_permissions: bool = True,
         drive_name: str = "",
-        max_file_size: int = 100 * 1024 * 1024,  # 100 MB
+        max_file_size: int = 500 * 1024 * 1024,  # 500 MB (was 100 MB)
     ) -> SharePointFile:
         """Convert a Graph API item dict into a SharePointFile with optional content and permissions."""
         drive_id = item.get("_drive_id", "")

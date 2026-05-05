@@ -1,25 +1,31 @@
 """
-Configuration loader for the SharePoint → Azure AI Search connector.
-Reads from environment variables (supports .env file via python-dotenv).
+Configuration loader for the SharePoint → Azure AI Search connector
+(Pattern A — unified multimodal).
 
-Authentication:
-  - Foundry (embeddings): always uses DefaultAzureCredential
-  - Azure AI Search: always uses DefaultAzureCredential
-  - Graph API (SharePoint): DefaultAzureCredential by default, client secret as optional fallback
+One embedding service: Azure AI Vision multimodal (Florence).
+Text chunks and image chunks both produce 1024-d vectors in the same space.
 
-For Graph API (SharePoint), DefaultAzureCredential is used directly.
-The app registration still needs Sites.Read.All + Files.Read.All application
-permissions granted, and the managed identity (or local principal) must be
-assigned as a federated credential on that app registration.
+Authentication everywhere via DefaultAzureCredential (managed identity in prod,
+Azure CLI for local dev). Optional CLIENT_SECRET fallback for Graph, resolved
+from Key Vault via @Microsoft.KeyVault(...) app-setting reference.
 """
 
+import logging
 import os
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
+from enum import Enum
 from urllib.parse import urlparse
 
 from dotenv import load_dotenv
 
 load_dotenv()
+logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
 
 
 def _get_required(key: str) -> str:
@@ -33,16 +39,42 @@ def _get_optional(key: str, default: str = "") -> str:
     return os.getenv(key, default)
 
 
+def _get_bool(key: str, default: bool = False) -> bool:
+    raw = os.getenv(key)
+    if raw is None or raw == "":
+        return default
+    return raw.strip().lower() in ("1", "true", "yes", "on")
+
+
+# ---------------------------------------------------------------------------
+# Enums
+# ---------------------------------------------------------------------------
+
+
+class ProcessingMode(str, Enum):
+    FULL = "full"
+    SINCE_DATE = "since-date"
+    SINCE_LAST_RUN = "since-last-run"
+
+
+class FunctionProcessingMode(str, Enum):
+    QUEUE = "queue"
+    INLINE = "inline"
+
+
+# ---------------------------------------------------------------------------
+# Dataclasses
+# ---------------------------------------------------------------------------
+
+
 @dataclass(frozen=True)
 class EntraConfig:
-    """Entra ID config. client_id/client_secret are only needed when NOT using managed identity."""
     tenant_id: str
     client_id: str = ""
     client_secret: str = ""
 
     @property
     def use_managed_identity(self) -> bool:
-        """Use managed identity when no client secret is provided."""
         return not self.client_secret
 
 
@@ -53,12 +85,10 @@ class SharePointConfig:
 
     @property
     def hostname(self) -> str:
-        """Extract hostname from site URL, e.g. 'yourcompany.sharepoint.com'"""
         return urlparse(self.site_url).hostname or ""
 
     @property
     def site_path(self) -> str:
-        """Extract site path, e.g. '/sites/YourSite'"""
         return urlparse(self.site_url).path.rstrip("/")
 
 
@@ -69,10 +99,37 @@ class SearchConfig:
 
 
 @dataclass(frozen=True)
-class OpenAIConfig:
-    endpoint: str
-    embedding_deployment: str
-    embedding_dimensions: int = 1536
+class MultimodalConfig:
+    """Azure AI Vision multimodal embeddings (Florence) — 1024d vectors for
+    text AND images in the same space.
+
+    Must be populated for the indexer to produce any vectors.
+    """
+    endpoint: str                          # e.g. https://<foundry>.cognitiveservices.azure.com
+    model_version: str = "2023-04-15"
+    images_container: str = "images"
+
+    @property
+    def enabled(self) -> bool:
+        return bool(self.endpoint)
+
+
+@dataclass(frozen=True)
+class DocIntelConfig:
+    """Azure AI Document Intelligence (Layout) — optional structural extractor.
+
+    When set, supported formats (PDF, DOCX, PPTX, XLSX, images) go through the
+    prebuilt-layout model for reading-order paragraphs, tables, and figures with
+    bounding polygons. When empty, the hand-written extractors are used for all
+    formats; image files are embedded directly without layout metadata.
+    """
+    endpoint: str = ""
+    skip_below_kb: int = 5
+    max_image_size_mb: int = 20
+
+    @property
+    def enabled(self) -> bool:
+        return bool(self.endpoint)
 
 
 @dataclass(frozen=True)
@@ -84,12 +141,27 @@ class IndexerConfig:
         ".rtf", ".eml", ".epub", ".msg",
         ".odt", ".ods", ".odp",
         ".zip", ".gz",
+        ".png", ".jpg", ".jpeg", ".tiff", ".bmp",
     ])
     chunk_size: int = 2000
     chunk_overlap: int = 200
     max_concurrency: int = 4
-    max_file_size_mb: int = 100
-    incremental_minutes: int = 0
+    max_file_size_mb: int = 500
+    processing_mode: ProcessingMode = ProcessingMode.SINCE_LAST_RUN
+    start_date: datetime | None = None
+    function_processing_mode: FunctionProcessingMode = FunctionProcessingMode.QUEUE
+    extract_images: bool = True
+    # Per-file chunk vectorisation concurrency. The ceiling is also bounded by
+    # MultimodalEmbeddingsClient's own semaphore (MULTIMODAL_MAX_IN_FLIGHT).
+    vectorise_concurrency: int = 8
+    # Optional folder paths inside each library to scope the indexer to.
+    # Empty = whole library. Paths are relative to the drive root
+    # (e.g. "Finance/Reports,HR/Policies").
+    root_paths: list[str] = field(default_factory=list)
+    # Periodic full reconciliation cadence (only when not running in FULL mode).
+    # Every Nth run compares the index to SharePoint and removes orphans.
+    # 0 = disabled.
+    reconcile_every_n_runs: int = 24
 
 
 @dataclass(frozen=True)
@@ -97,21 +169,83 @@ class AppConfig:
     entra: EntraConfig
     sharepoint: SharePointConfig
     search: SearchConfig
-    openai: OpenAIConfig
+    multimodal: MultimodalConfig
+    docintel: DocIntelConfig
     indexer: IndexerConfig
 
 
+# ---------------------------------------------------------------------------
+# Loader
+# ---------------------------------------------------------------------------
+
+
+def _parse_start_date(raw: str) -> datetime | None:
+    if not raw:
+        return None
+    try:
+        dt = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    except ValueError as e:
+        raise EnvironmentError(f"START_DATE is not a valid ISO-8601 date: {raw!r} ({e})") from e
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt
+
+
+def _resolve_processing_mode() -> tuple[ProcessingMode, datetime | None]:
+    raw_mode = _get_optional("PROCESSING_MODE").strip().lower()
+
+    legacy = _get_optional("INCREMENTAL_MINUTES")
+    if raw_mode == "" and legacy != "":
+        logger.warning(
+            "INCREMENTAL_MINUTES is deprecated; use PROCESSING_MODE=full|since-date|since-last-run."
+        )
+        try:
+            minutes = int(legacy)
+        except ValueError:
+            minutes = 0
+        return (ProcessingMode.FULL if minutes == 0 else ProcessingMode.SINCE_LAST_RUN, None)
+
+    if raw_mode == "":
+        return (ProcessingMode.SINCE_LAST_RUN, None)
+
+    try:
+        mode = ProcessingMode(raw_mode)
+    except ValueError as e:
+        raise EnvironmentError(
+            f"PROCESSING_MODE must be one of {[m.value for m in ProcessingMode]}, got {raw_mode!r}"
+        ) from e
+
+    start_date = _parse_start_date(_get_optional("START_DATE"))
+    if mode == ProcessingMode.SINCE_DATE and start_date is None:
+        raise EnvironmentError("PROCESSING_MODE=since-date requires START_DATE (ISO-8601 UTC).")
+    return (mode, start_date)
+
+
 def load_config() -> AppConfig:
-    """Load and validate all configuration from environment variables."""
     libraries_raw = _get_optional("SHAREPOINT_LIBRARIES", "")
     libraries = [lib.strip() for lib in libraries_raw.split(",") if lib.strip()] if libraries_raw else []
+
+    root_paths_raw = _get_optional("SHAREPOINT_ROOT_PATHS", "")
+    root_paths = [p.strip().lstrip("/") for p in root_paths_raw.split(",") if p.strip()] if root_paths_raw else []
 
     extensions_raw = _get_optional(
         "INDEXED_EXTENSIONS",
         ".pdf,.docx,.docm,.xlsx,.xlsm,.pptx,.pptm,.txt,.md,.csv,.json,.xml,.kml,"
-        ".html,.htm,.rtf,.eml,.epub,.msg,.odt,.ods,.odp,.zip,.gz"
+        ".html,.htm,.rtf,.eml,.epub,.msg,.odt,.ods,.odp,.zip,.gz,"
+        ".png,.jpg,.jpeg,.tiff,.bmp"
     )
     extensions = [ext.strip() for ext in extensions_raw.split(",") if ext.strip()]
+
+    mode, start_date = _resolve_processing_mode()
+
+    fn_mode_raw = _get_optional("FUNCTION_PROCESSING_MODE", "queue").strip().lower()
+    try:
+        fn_mode = FunctionProcessingMode(fn_mode_raw)
+    except ValueError as e:
+        raise EnvironmentError(
+            f"FUNCTION_PROCESSING_MODE must be one of {[m.value for m in FunctionProcessingMode]}, "
+            f"got {fn_mode_raw!r}"
+        ) from e
 
     return AppConfig(
         entra=EntraConfig(
@@ -127,17 +261,28 @@ def load_config() -> AppConfig:
             endpoint=_get_required("SEARCH_ENDPOINT"),
             index_name=_get_optional("SEARCH_INDEX_NAME", "sharepoint-index"),
         ),
-        openai=OpenAIConfig(
-            endpoint=_get_required("FOUNDRY_ENDPOINT"),
-            embedding_deployment=_get_optional("FOUNDRY_EMBEDDING_DEPLOYMENT", "text-embedding-3-large"),
-            embedding_dimensions=int(_get_optional("FOUNDRY_EMBEDDING_DIMENSIONS", "1536")),
+        multimodal=MultimodalConfig(
+            endpoint=_get_required("MULTIMODAL_ENDPOINT"),
+            model_version=_get_optional("MULTIMODAL_MODEL_VERSION", "2023-04-15"),
+            images_container=_get_optional("IMAGES_CONTAINER", "images"),
+        ),
+        docintel=DocIntelConfig(
+            endpoint=_get_optional("DOCINTEL_ENDPOINT", ""),
+            skip_below_kb=int(_get_optional("DOCINTEL_SKIP_BELOW_KB", "5")),
+            max_image_size_mb=int(_get_optional("DOCINTEL_MAX_IMAGE_SIZE_MB", "20")),
         ),
         indexer=IndexerConfig(
             indexed_extensions=extensions,
             chunk_size=int(_get_optional("CHUNK_SIZE", "2000")),
             chunk_overlap=int(_get_optional("CHUNK_OVERLAP", "200")),
             max_concurrency=int(_get_optional("MAX_CONCURRENCY", "4")),
-            max_file_size_mb=int(_get_optional("MAX_FILE_SIZE_MB", "100")),
-            incremental_minutes=int(_get_optional("INCREMENTAL_MINUTES", "0")),
+            max_file_size_mb=int(_get_optional("MAX_FILE_SIZE_MB", "500")),
+            processing_mode=mode,
+            start_date=start_date,
+            function_processing_mode=fn_mode,
+            extract_images=_get_bool("EXTRACT_IMAGES", True),
+            vectorise_concurrency=int(_get_optional("VECTORISE_CONCURRENCY", "8")),
+            root_paths=root_paths,
+            reconcile_every_n_runs=int(_get_optional("RECONCILE_EVERY_N_RUNS", "24")),
         ),
     )

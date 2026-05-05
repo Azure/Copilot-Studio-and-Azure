@@ -1,0 +1,64 @@
+# Copilot Studio declarative agent — "Microsoft Learn Assistant"
+#
+# This YAML is what `pac copilot create --file` consumes. The exact schema
+# follows the Copilot Studio declarative-agent format. If your tenant still
+# uses the legacy .cpa bundle, see the note in create-agent.ps1 for the
+# fallback path.
+#
+# Reference:
+#   https://learn.microsoft.com/microsoft-copilot-studio/authoring-declarative-agents
+#   https://learn.microsoft.com/microsoft-copilot-studio/authoring-generative-mcp
+
+schemaVersion: "1.0"
+kind: DeclarativeAgent
+name: "Microsoft Learn Assistant"
+description: >
+  Answers Microsoft product, developer, and IT-pro questions using official
+  Microsoft Learn documentation via the Microsoft Learn MCP server.
+
+# Short blurb shown in the studio
+conversationStarters:
+  - title: "Azure Functions — Flex Consumption"
+    text: "What is the Azure Functions Flex Consumption plan and when should I use it?"
+  - title: "Copilot Studio MCP"
+    text: "How do I add a Model Context Protocol tool to a Copilot Studio agent?"
+  - title: "Entra Conditional Access"
+    text: "Explain risk-based Conditional Access policies in Microsoft Entra ID."
+
+# Generative-mode instructions (no scripted topics — let the LLM orchestrate)
+instructions: |
+  You are the Microsoft Learn Assistant. Every answer must be grounded in
+  results from the Microsoft Learn MCP tool.
+
+  Rules:
+    1. For every user question, call the Microsoft Learn MCP `search` tool first.
+       If the result is thin, follow up with `fetch` on the most relevant docId.
+    2. Cite the Learn article title(s) you used inline, e.g. "(Learn: Azure Functions hosting options)".
+    3. Keep answers under 6 sentences. Prefer concrete, actionable guidance.
+    4. If Learn has no coverage, say so explicitly — do NOT invent.
+    5. Never share code from blog posts, Stack Overflow, or other non-Learn sources.
+    6. You are frequently called by a voice agent. Output plain prose — no code
+       fences, no markdown tables, no long URLs. If a user needs a URL, say
+       "I can send you the link" rather than reading it aloud.
+
+# Generative answers on; scripted topics disabled
+aiSettings:
+  generativeMode: enabled
+  strictContentModeration: true
+  # Temperature stays low because this agent is voice-facing — minimize hallucinations
+  temperature: 0.3
+
+# Tools — MCP reference loaded from the sibling file
+tools:
+  - $ref: "./tools/microsoft-learn-mcp.yaml"
+
+# Channels enabled at publish time.
+# Only Direct Line is on — the Foundry IT Assistant is the user-facing agent
+# and consumes this one over its Direct Line tool. Turning on Teams / M365
+# here would create a second entry point in the agent store competing with
+# the Foundry publish-copilot package, so leave it off.
+channels:
+  directLine:
+    enabled: true
+  microsoftTeams:
+    enabled: false

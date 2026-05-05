@@ -1,147 +1,39 @@
 """
-Azure AI Search push client.
-Creates/updates the search index and uploads document chunks with embeddings.
+Azure AI Search push client — Pattern A (unified multimodal).
+
+Single vector field `content_embedding` (1024d, Azure AI Vision multimodal).
+Text chunks embed via `vectorizeText`; image chunks embed via `vectorizeImage`.
+Both live in the same vector space, so one hybrid query retrieves both.
+
+The index schema and its query-time vectorizer are provisioned by the Bicep
+deployment (see `infra/sharepoint-index.json` + the `createSearchIndex`
+deploymentScript). This module owns the **data plane only** — uploading
+chunks, deleting by parent, and serving queries against the pre-existing
+index. It does not create, recreate, or update the index schema.
 """
+
+from __future__ import annotations
 
 import logging
 import time
 from typing import Any
 
-from azure.search.documents import SearchClient
-from azure.search.documents.indexes import SearchIndexClient
-from azure.search.documents.indexes.models import (
-    SearchIndex,
-    SimpleField,
-    SearchableField,
-    SearchField,
-    SearchFieldDataType,
-    VectorSearch,
-    HnswAlgorithmConfiguration,
-    VectorSearchProfile,
-    SemanticConfiguration,
-    SemanticSearch,
-    SemanticPrioritizedFields,
-    SemanticField,
-)
 from azure.core.exceptions import HttpResponseError
 from azure.identity import DefaultAzureCredential
+from azure.search.documents import SearchClient
+from azure.search.documents.indexes import SearchIndexClient
 
-from config import SearchConfig
+from config import MultimodalConfig, SearchConfig
 
 logger = logging.getLogger(__name__)
 
 
-# ------------------------------------------------------------------ #
-# Index schema definition
-# ------------------------------------------------------------------ #
+MULTIMODAL_DIM = 1024
 
-def _build_index(name: str, embedding_dimensions: int) -> SearchIndex:
-    """Build the Azure AI Search index schema for SharePoint documents."""
-    fields = [
-        SimpleField(
-            name="chunk_id",
-            type=SearchFieldDataType.String,
-            key=True,
-            filterable=True,
-        ),
-        SimpleField(
-            name="parent_id",
-            type=SearchFieldDataType.String,
-            filterable=True,
-        ),
-        SearchableField(
-            name="chunk",
-            type=SearchFieldDataType.String,
-        ),
-        SearchableField(
-            name="title",
-            type=SearchFieldDataType.String,
-            filterable=True,
-            sortable=True,
-        ),
-        SimpleField(
-            name="source_url",
-            type=SearchFieldDataType.String,
-            filterable=False,
-        ),
-        SimpleField(
-            name="last_modified",
-            type=SearchFieldDataType.DateTimeOffset,
-            filterable=True,
-            sortable=True,
-        ),
-        SimpleField(
-            name="content_type",
-            type=SearchFieldDataType.String,
-            filterable=True,
-        ),
-        SimpleField(
-            name="file_size",
-            type=SearchFieldDataType.Int64,
-            filterable=True,
-        ),
-        SimpleField(
-            name="created_by",
-            type=SearchFieldDataType.String,
-            filterable=True,
-        ),
-        SimpleField(
-            name="modified_by",
-            type=SearchFieldDataType.String,
-            filterable=True,
-        ),
-        SimpleField(
-            name="drive_name",
-            type=SearchFieldDataType.String,
-            filterable=True,
-        ),
-        # Permissions for security trimming
-        SimpleField(
-            name="permission_ids",
-            type=SearchFieldDataType.Collection(SearchFieldDataType.String),
-            filterable=True,
-        ),
-        # Vector field for embeddings
-        SearchField(
-            name="text_vector",
-            type=SearchFieldDataType.Collection(SearchFieldDataType.Single),
-            searchable=True,
-            vector_search_dimensions=embedding_dimensions,
-            vector_search_profile_name="sp-vector-profile",
-        ),
-    ]
-
-    vector_search = VectorSearch(
-        algorithms=[
-            HnswAlgorithmConfiguration(name="sp-hnsw"),
-        ],
-        profiles=[
-            VectorSearchProfile(
-                name="sp-vector-profile",
-                algorithm_configuration_name="sp-hnsw",
-            ),
-        ],
-    )
-
-    semantic_config = SemanticConfiguration(
-        name="sp-semantic-config",
-        prioritized_fields=SemanticPrioritizedFields(
-            title_field=SemanticField(field_name="title"),
-            content_fields=[SemanticField(field_name="chunk")],
-        ),
-    )
-
-    semantic_search = SemanticSearch(
-        default_configuration_name="sp-semantic-config",
-        configurations=[semantic_config],
-    )
-
-    return SearchIndex(
-        name=name,
-        fields=fields,
-        vector_search=vector_search,
-        semantic_search=semantic_search,
-    )
+_VEC_PROFILE = "sp-vector-profile"
+_VEC_ALGO = "sp-hnsw"
+_VEC_VECTORIZER = "sp-aivision-vectorizer"
+SEMANTIC_CONFIG_NAME = "sp-semantic-config"
 
 
 # ------------------------------------------------------------------ #
@@ -151,16 +43,13 @@ def _build_index(name: str, embedding_dimensions: int) -> SearchIndex:
 class SearchPushClient:
     """Client that pushes document chunks directly to Azure AI Search."""
 
-    def __init__(self, config: SearchConfig, embedding_dimensions: int = 1536):
+    def __init__(self, config: SearchConfig, multimodal: MultimodalConfig):
         self._config = config
-        self._embedding_dimensions = embedding_dimensions
+        self._multimodal = multimodal
         self._credential = DefaultAzureCredential()
         logger.info("Search client: using DefaultAzureCredential (managed identity)")
 
-        self._index_client = SearchIndexClient(
-            endpoint=config.endpoint,
-            credential=self._credential,
-        )
+        self._index_client = SearchIndexClient(endpoint=config.endpoint, credential=self._credential)
         self._search_client: SearchClient | None = None
 
     def _get_search_client(self) -> SearchClient:
@@ -173,33 +62,15 @@ class SearchPushClient:
         return self._search_client
 
     # -------------------------------------------------------------- #
-    # Index management
-    # -------------------------------------------------------------- #
-
-    def ensure_index(self) -> None:
-        """Create or update the search index."""
-        index = _build_index(self._config.index_name, self._embedding_dimensions)
-        try:
-            self._index_client.create_or_update_index(index)
-            logger.info(f"Index '{self._config.index_name}' is ready")
-        except HttpResponseError as e:
-            logger.error(f"Failed to create/update index: {e.message}")
-            raise
-
-    # -------------------------------------------------------------- #
     # Document operations
     # -------------------------------------------------------------- #
 
     def upload_documents(self, documents: list[dict[str, Any]], batch_size: int = 500) -> int:
-        """
-        Upload or merge documents into the index in batches.
-        Returns total number of documents successfully uploaded.
-        """
         client = self._get_search_client()
         total_uploaded = 0
 
         for i in range(0, len(documents), batch_size):
-            batch = documents[i : i + batch_size]
+            batch = documents[i: i + batch_size]
             result = self._upload_batch_with_retry(client, batch)
             succeeded = sum(1 for r in result if r.succeeded)
             failed = sum(1 for r in result if not r.succeeded)
@@ -211,21 +82,19 @@ class SearchPushClient:
                         logger.error(f"Failed to upload {r.key}: {r.error_message}")
 
             logger.info(
-                f"Batch {i // batch_size + 1}: "
-                f"{succeeded} uploaded, {failed} failed "
+                f"Batch {i // batch_size + 1}: {succeeded} uploaded, {failed} failed "
                 f"({total_uploaded} total so far)"
             )
 
         return total_uploaded
 
     def _upload_batch_with_retry(self, client: SearchClient, batch: list[dict], max_retries: int = 5) -> list:
-        """Upload a batch with retry on transient errors."""
         for attempt in range(max_retries):
             try:
                 return client.upload_documents(documents=batch)
             except HttpResponseError as e:
                 if e.status_code == 429 or (e.status_code and e.status_code >= 500):
-                    wait = min(2**attempt, 30)
+                    wait = min(2 ** attempt, 30)
                     logger.warning(f"Search upload error {e.status_code}. Retrying in {wait}s (attempt {attempt + 1})")
                     time.sleep(wait)
                 else:
@@ -233,9 +102,7 @@ class SearchPushClient:
         raise RuntimeError(f"Failed to upload batch after {max_retries} retries")
 
     def delete_documents_by_parent(self, parent_id: str) -> None:
-        """Delete all chunks for a given parent document ID."""
         client = self._get_search_client()
-        # Find all chunk_ids for this parent
         results = client.search(
             search_text="*",
             filter=f"parent_id eq '{parent_id}'",
@@ -248,10 +115,6 @@ class SearchPushClient:
             logger.info(f"Deleted {len(chunk_ids)} chunks for parent '{parent_id}'")
 
     def check_freshness(self, parent_id: str) -> str | None:
-        """
-        Check if a document already exists in the index.
-        Returns the last_modified timestamp string if found, None otherwise.
-        """
         client = self._get_search_client()
         try:
             results = client.search(
@@ -264,32 +127,102 @@ class SearchPushClient:
                 return doc.get("last_modified")
         except HttpResponseError as e:
             logger.warning(f"Freshness check failed for {parent_id}: {e.message}")
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.warning(f"Freshness check failed for {parent_id}: {e}")
         return None
 
     def get_all_parent_ids(self) -> set[str]:
-        """
-        Retrieve all unique parent IDs currently in the index.
-        Used for reconciling deleted files.
-        """
         client = self._get_search_client()
         parent_ids: set[str] = set()
         try:
-            results = client.search(
-                search_text="*",
-                select=["parent_id"],
-            )
+            results = client.search(search_text="*", select=["parent_id"])
             for doc in results:
                 pid = doc.get("parent_id")
                 if pid:
                     parent_ids.add(pid)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.warning(f"Could not retrieve parent IDs for reconciliation: {e}")
         return parent_ids
 
+    # -------------------------------------------------------------- #
+    # Per-user security trimming — single-vector hybrid query
+    # -------------------------------------------------------------- #
+
+    def search_with_trimming(
+        self,
+        query: str,
+        identity_ids: list[str],
+        top: int = 10,
+        extra_filter: str | None = None,
+        query_vector: list[float] | None = None,
+    ) -> list[dict[str, Any]]:
+        """Semantic + hybrid search with permission trimming.
+
+        When `query_vector` is provided, it's used directly (skip client-side
+        call to Azure AI Vision). When omitted, AI Search's registered
+        AI-Services-Vision vectorizer handles the text → vector conversion.
+        """
+        from search_security import build_permission_filter
+
+        perm_filter = build_permission_filter(identity_ids)
+        full_filter = f"({perm_filter})"
+        if extra_filter:
+            full_filter = f"{full_filter} and ({extra_filter})"
+
+        from azure.search.documents.models import VectorizableTextQuery, VectorizedQuery
+
+        if query_vector:
+            vec_query = VectorizedQuery(
+                vector=query_vector, k_nearest_neighbors=top, fields="content_embedding"
+            )
+        else:
+            vec_query = VectorizableTextQuery(
+                text=query, k_nearest_neighbors=top, fields="content_embedding"
+            )
+
+        client = self._get_search_client()
+        select_fields = [
+            "chunk_id", "parent_id", "content_text", "title", "source_url",
+            "last_modified", "has_image", "content_path", "location_metadata",
+        ]
+        try:
+            results = client.search(
+                search_text=query,
+                filter=full_filter,
+                vector_queries=[vec_query],
+                query_type="semantic",
+                semantic_configuration_name=SEMANTIC_CONFIG_NAME,
+                select=select_fields,
+                top=top,
+            )
+        except HttpResponseError as e:
+            logger.warning(f"Semantic search failed, falling back: {e.message}")
+            results = client.search(
+                search_text=query,
+                filter=full_filter,
+                vector_queries=[vec_query],
+                select=select_fields,
+                top=top,
+            )
+
+        citations: list[dict[str, Any]] = []
+        for doc in results:
+            citations.append({
+                "chunk_id": doc.get("chunk_id"),
+                "parent_id": doc.get("parent_id"),
+                "title": doc.get("title"),
+                "url": doc.get("source_url"),
+                "chunk": doc.get("content_text"),
+                "last_modified": doc.get("last_modified"),
+                "has_image": bool(doc.get("has_image")),
+                "content_path": doc.get("content_path"),
+                "location_metadata": doc.get("location_metadata"),
+                "score": doc.get("@search.score"),
+                "reranker_score": doc.get("@search.reranker_score"),
+            })
+        return citations
+
     def close(self) -> None:
-        """Close clients."""
         if self._search_client:
             self._search_client.close()
         self._index_client.close()

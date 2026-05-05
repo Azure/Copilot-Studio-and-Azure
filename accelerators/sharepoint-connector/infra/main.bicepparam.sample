@@ -1,0 +1,44 @@
+using './main.bicep'
+
+// ============================================================================
+// Two required values — everything else is defaulted or created by the
+// template itself.
+//
+// `tenantId` is inferred from the deployment context (subscription().tenantId).
+// All operational tuning knobs (Search SKU, Foundry, Document Intelligence,
+// Key Vault, processing modes, concurrency, backup schedule, file extensions,
+// etc.) are hardcoded in main.bicep and can be tuned post-deployment via
+// Function App settings.
+// ============================================================================
+
+// Resource-name prefix (3–16 chars, lowercase letters / digits / hyphens).
+// A short uniqueness hash is appended automatically where Azure demands
+// globally-unique names (Search / Foundry / DocIntel / Storage / Key Vault).
+param baseName = 'sp-indexer'
+
+// Leave as-is to use the resource group's region, or pin to a specific
+// Azure AI Vision multimodal-4.0-supported region.
+param location = 'swedencentral'
+
+// The SharePoint site the connector will monitor.
+// (Grant the Function's managed identity `Sites.Selected` on just this
+//  site via infra/grant-site-permission.ps1 after deployment.)
+param sharePointSiteUrl = 'https://yourcompany.sharepoint.com/sites/YourSite'
+
+// ============================================================================
+// Per-user security trimming — OPT-IN. Default false: Copilot Studio queries
+// Azure AI Search directly as a Knowledge Source (simplest deployment).
+// Flip to true only after reading the README's "Extending with Per-User
+// Security Trimming" section — adding it requires the `Application
+// Administrator` Entra role and a Power Platform connection setup.
+// ============================================================================
+// param enableSecurityTrimming = true
+
+// Escape hatch — only relevant when enableSecurityTrimming = true. LEAVE
+// EMPTY on the normal trimming path; the template will declare the
+// /api/search Entra app registration itself via the Microsoft Graph Bicep
+// extension. Only populate this when the deployer lacks Graph privileges
+// and an admin has pre-created the app registration via
+// infra/create-api-app-registration.ps1. Accepts a bare GUID or
+// `api://<clientId>`.
+// param apiAudience = '00000000-1111-2222-3333-444444444444'

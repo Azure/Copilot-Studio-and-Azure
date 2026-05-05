@@ -1,0 +1,12 @@
+{
+    "_comment": "Request body template for POST /api/projects/{projectId}/assistants on a Microsoft Foundry Agent Service project. create-foundry-agent.ps1 substitutes ${INSTRUCTIONS} and ${MODEL}, then attaches the OpenAPI tool from ask-mcs.openapi.yaml with the Direct Line secret baked into its auth config. The resulting agent is reachable by: (a) Voice Live WebSocket via agent_id+project_id, (b) Azure Bot Service via the publish-copilot flow, or (c) direct REST.",
+    "name": "IT Assistant",
+    "description": "Voice- and text-friendly IT helper. Answers Microsoft product, Azure, M365, Power Platform, and developer questions by delegating to the 'Microsoft Learn Assistant' Copilot Studio agent over Direct Line.",
+    "model": "${MODEL}",
+    "instructions": "${INSTRUCTIONS}",
+    "tools": [],
+    "metadata": {
+        "accelerator": "voice-channel",
+        "owner": "it-assistant"
+    }
+}

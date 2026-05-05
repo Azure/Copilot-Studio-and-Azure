@@ -1,0 +1,285 @@
+:root {
+    --accent: #0078d4;
+    --accent-strong: #106ebe;
+    --danger: #d13438;
+    --bg: #faf9f8;
+    --panel: #ffffff;
+    --fg: #201f1e;
+    --muted: #605e5c;
+    --border: #edebe9;
+    --radius: 12px;
+    --radius-sm: 6px;
+    --user-color: #0078d4;
+    --agent-color: #107c10;
+    --shadow: 0 1px 4px rgba(0,0,0,0.04), 0 2px 12px rgba(0,0,0,0.06);
+}
+
+/* ─── Microsoft Teams host overrides ───────────────────────────────────
+   Applied via client.js when microsoftTeams.app.initialize() succeeds.
+   Dark + high-contrast variants mirror Teams' theme tokens so the tab
+   doesn't look out of place inside the Teams chrome.
+-------------------------------------------------------------------- */
+body.in-teams {
+    padding: 1rem 1rem 0.5rem;     /* Teams already has chrome padding */
+    max-width: none;
+}
+body.in-teams header,
+body.in-teams footer {
+    display: none;                  /* Teams gives us its own header / footer */
+}
+body.in-teams main {
+    margin-top: 0;
+    min-height: calc(100vh - 2rem);
+}
+
+body[data-teams-theme="dark"] {
+    --bg:     #1f1f1f;
+    --panel:  #2b2b2b;
+    --fg:     #ffffff;
+    --muted:  #c8c6c4;
+    --border: #3b3a39;
+    --shadow: 0 1px 4px rgba(0,0,0,0.25), 0 2px 12px rgba(0,0,0,0.35);
+}
+body[data-teams-theme="contrast"] {
+    --bg:     #000000;
+    --panel:  #000000;
+    --fg:     #ffffff;
+    --muted:  #ffff01;
+    --border: #ffffff;
+    --accent: #ffff01;
+    --accent-strong: #ffff01;
+    --danger: #ffff01;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+    margin: 0;
+    padding: 0;
+    height: 100%;
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    background: var(--bg);
+    color: var(--fg);
+}
+
+body {
+    display: flex;
+    flex-direction: column;
+    max-width: 1080px;
+    margin: 0 auto;
+    padding: 2rem 1.5rem;
+}
+
+/* ─── Header ────────────────────────────────────────────────────────── */
+header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding-bottom: 1.25rem;
+    border-bottom: 1px solid var(--border);
+}
+.brand {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+.logo {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #0078d4 0%, #5c2d91 100%);
+    flex-shrink: 0;
+}
+h1 { margin: 0; font-size: 1.35rem; }
+.subtitle { margin: 0.1rem 0 0; color: var(--muted); font-size: 0.85rem; }
+
+.status-pill {
+    padding: 0.3rem 0.85rem;
+    border-radius: 999px;
+    font-size: 0.78rem;
+    font-weight: 600;
+    background: var(--border);
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+.status-pill.live    { background: #dff6dd; color: #107c10; }
+.status-pill.error   { background: #fde7e9; color: var(--danger); }
+.status-pill.connecting { background: #fff4ce; color: #8a6d00; }
+
+/* ─── Main layout ───────────────────────────────────────────────────── */
+main {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 1.5rem;
+    margin-top: 1.5rem;
+    flex: 1;
+}
+@media (min-width: 880px) {
+    main { grid-template-columns: 360px 1fr; }
+}
+
+/* ─── Talk panel ────────────────────────────────────────────────────── */
+.talk-panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 1.5rem 1.25rem 1.75rem;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    box-shadow: var(--shadow);
+}
+.talk-btn {
+    width: 140px;
+    height: 140px;
+    border-radius: 50%;
+    border: 0;
+    background: var(--accent);
+    color: white;
+    cursor: pointer;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.4rem;
+    box-shadow: 0 6px 20px rgba(0,120,212,0.25);
+    transition: transform 120ms ease, background 120ms ease, box-shadow 120ms ease;
+}
+.talk-btn:hover        { background: var(--accent-strong); }
+.talk-btn:active       { transform: scale(0.97); }
+.talk-btn[data-state="live"] {
+    background: var(--danger);
+    box-shadow: 0 6px 20px rgba(209,52,56,0.3);
+    animation: pulse 2.3s ease-in-out infinite;
+}
+.talk-btn[data-state="connecting"] { background: #a19f9d; cursor: wait; }
+.talk-btn[disabled]    { opacity: 0.6; cursor: not-allowed; }
+
+@keyframes pulse {
+    0%, 100% { box-shadow: 0 6px 20px rgba(209,52,56,0.3); }
+    50%      { box-shadow: 0 6px 30px rgba(209,52,56,0.55); }
+}
+
+.talk-icon {
+    width: 32px;
+    height: 48px;
+    border-radius: 16px;
+    background: currentColor;
+    opacity: 0.9;
+    position: relative;
+}
+.talk-icon::after {
+    content: '';
+    position: absolute;
+    left: 50%;
+    bottom: -14px;
+    transform: translateX(-50%);
+    width: 2px;
+    height: 10px;
+    background: currentColor;
+}
+.talk-label { font-weight: 600; font-size: 0.85rem; letter-spacing: 0.02em; }
+
+.meters {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    margin-top: 1.5rem;
+    width: 100%;
+    align-items: center;
+}
+.meters canvas {
+    width: 240px;
+    max-width: 100%;
+    height: 32px;
+    background: var(--bg);
+    border-radius: var(--radius-sm);
+}
+.hint {
+    margin: 1rem 0 0;
+    color: var(--muted);
+    font-size: 0.82rem;
+    text-align: center;
+    line-height: 1.45;
+}
+
+/* ─── Transcript ────────────────────────────────────────────────────── */
+.transcript {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 1.25rem 1.5rem 1.5rem;
+    overflow: hidden;
+    box-shadow: var(--shadow);
+    display: flex;
+    flex-direction: column;
+    min-height: 420px;
+}
+.transcript h2 {
+    margin: 0 0 0.85rem;
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--muted);
+    font-weight: 600;
+}
+#turns {
+    flex: 1;
+    overflow-y: auto;
+    padding-right: 0.5rem;
+}
+.turn {
+    margin-bottom: 1rem;
+    padding: 0.5rem 0;
+    border-left: 2px solid transparent;
+    padding-left: 0.9rem;
+}
+.turn.user     { border-left-color: var(--user-color); }
+.turn.agent    { border-left-color: var(--agent-color); }
+.turn .who {
+    font-weight: 600;
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--muted);
+    margin-bottom: 0.25rem;
+}
+.turn.user .who  { color: var(--user-color); }
+.turn.agent .who { color: var(--agent-color); }
+.turn .body      { line-height: 1.55; font-size: 0.95rem; }
+
+.turn.pending .body::after {
+    content: '';
+    display: inline-block;
+    width: 6px;
+    height: 14px;
+    margin-left: 4px;
+    background: currentColor;
+    opacity: 0.5;
+    animation: blink 1s steps(2) infinite;
+    vertical-align: middle;
+}
+@keyframes blink { 50% { opacity: 0; } }
+
+/* ─── Footer ────────────────────────────────────────────────────────── */
+footer {
+    margin-top: 2rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    color: var(--muted);
+    font-size: 0.78rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--border);
+}
+.mode-tag {
+    padding: 0.15rem 0.6rem;
+    border-radius: var(--radius-sm);
+    background: var(--border);
+    font-family: 'Segoe UI Mono', ui-monospace, monospace;
+    font-size: 0.72rem;
+}
+footer a { color: var(--accent); text-decoration: none; }
+footer a:hover { text-decoration: underline; }
