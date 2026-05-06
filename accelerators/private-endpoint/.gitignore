@@ -1,0 +1,17 @@
+# Local environment / secrets
+.env
+.env.*
+!.env.example
+
+# Deployment artifacts (contain real resource IDs / hostnames)
+scripts/deployment-outputs.json
+powerplatform/*.generated.json
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# PowerShell module cache
+*.psd1.bak

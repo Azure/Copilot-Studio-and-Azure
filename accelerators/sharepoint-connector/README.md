@@ -97,17 +97,38 @@ No local Python, `uv`, or `func` CLI needed — the function code is pulled from
 
 Storage Account (with queue / table / blob containers), Log Analytics + Application Insights, **Azure AI Search (Basic)**, **Microsoft Foundry / Azure AI Services** multi-service (hosts Azure AI Vision multimodal embeddings), **Document Intelligence** (Layout), **Key Vault**, Flex Consumption plan, and the Function App — plus every RBAC assignment on the Function's managed identity. No "pre-existing resource" paste-in.
 
+In addition, the template **always** creates a tiny dedicated storage account named `<baseName>ds<hash>` (suffix `ds` = "deployment scripts"), tagged `purpose=arm-deployment-scripts`, with `allowSharedKeyAccess: true`. The two ARM `deploymentScripts` (`createSearchIndex`, `publishCode`) need a key-enabled storage account to upload their script payload — without this, deployment fails with `KeyBasedAuthenticationNotPermitted` in tenants that enforce the *"Storage accounts should prevent shared key access"* Azure Policy. If your tenant has that policy in Deny mode, add a single **policy exemption** scoped to resources matching `tags['purpose'] == 'arm-deployment-scripts'` (or scope the exemption to this one resource by name). The application data path (the main storage account, BYO or template-created) does **not** rely on shared keys — only this small `*ds*` account does.
+
+#### Bring your own storage (BYO)
+
+Set `existingStorageAccountResourceId` to a full ARM resource ID to skip creating the main storage account. Use this when:
+
+- Tenant policy forbids creating new general-purpose storage accounts.
+- You need the data plane in a specific RG / VNet / encryption-key boundary.
+- You want to keep ownership of the storage lifecycle separate from the Function App.
+
+**Prerequisites — the BYO storage account MUST already contain these child resources** (the template will not create them on a BYO account):
+
+| Kind | Names |
+|---|---|
+| Blob containers | `app-package`, `state`, `images`, `backup` |
+| Queues | `sp-indexer-q`, `sp-indexer-q-poison` |
+| Tables | `failedFiles`, `runState`, `watermark` |
+
+**RBAC on the BYO storage account's resource group** — the deployer principal needs `User Access Administrator` (or `Owner`) on the BYO storage account's RG, because the template creates four cross-RG role assignments on the Function App's managed identity (`Storage Blob Data Owner`, `Storage Account Contributor`, `Storage Queue Data Contributor`, `Storage Table Data Contributor`). These are deployed via a small `byo-storage-roles.bicep` module scoped to that RG.
+
 ### Deployment Options
 
 The template asks for **two values** — everything else is inferred, defaulted, or created by the deployment itself.
 
 | Parameter | Required? | What it is |
 |---|---|---|
-| `baseName` | ✅ | Resource-name prefix (3–16 chars). A uniqueness hash is appended for globally-unique resources. |
+| `baseName` | ✅ | Resource-name prefix (3–16 chars). **Lowercase a–z, 0–9, hyphens only** — no spaces, underscores, dots, or uppercase. The template fails fast (synthetic resource names containing `INVALID-baseName-…`) if any disallowed character is present. A uniqueness hash is appended for globally-unique resources. |
 | `sharePointSiteUrl` | ✅ | Full URL of the SharePoint site to monitor. |
 | `location` | optional | Azure region (default `resourceGroup().location`). Pick one that supports Azure AI Vision multimodal 4.0. |
 | `enableSecurityTrimming` | optional | **Default `false`** — Copilot Studio queries AI Search directly. Flip to `true` only as part of the [Extending with Per-User Security Trimming](#extending-with-per-user-security-trimming) walkthrough. |
 | `apiAudience` | optional | Used **only** when `enableSecurityTrimming = true`. Supply a pre-created Entra app clientId (GUID or `api://<guid>`) when the deployer lacks `Application Administrator`; leave empty otherwise. |
+| `existingStorageAccountResourceId` | optional | **Bring-your-own (BYO) storage.** Empty (default) = template creates a new storage account. Supply the full ARM resource ID (`/subscriptions/<sub>/resourceGroups/<rg>/providers/Microsoft.Storage/storageAccounts/<name>`) to reuse an existing storage account — useful in tenants whose Azure Policy forbids creating new storage accounts. See [Bring your own storage](#bring-your-own-storage-byo) below for prerequisites. |
 
 Handled by the template itself:
 

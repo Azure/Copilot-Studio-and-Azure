@@ -31,7 +31,7 @@ extension microsoftGraphV1_0
 // Required parameters — user-supplied
 // ============================================================================
 
-@description('Base name for every resource. Lowercase letters / digits / hyphens. Used as a prefix; a short uniqueness hash is appended where Azure requires globally-unique names.')
+@description('Base name for every resource. Required pattern: lowercase letters, digits, and hyphens only (regex `^[a-z0-9-]+$`). NO spaces, NO underscores, NO dots, NO uppercase letters. Used as a prefix; a short uniqueness hash is appended where Azure requires globally-unique names. Examples: `mycorp-sp` (valid); `My Corp SP` or `mycorp_sp` (invalid).')
 @minLength(3)
 @maxLength(16)
 param baseName string
@@ -48,7 +48,15 @@ param enableSecurityTrimming bool = false
 @description('Optional escape hatch — only relevant when enableSecurityTrimming = true. When empty, the template creates the Entra app registration itself via the Microsoft Graph Bicep extension (deployer needs `Application Administrator`). When non-empty, the template skips creating the app and uses this client ID instead — useful when the deployer lacks Graph privileges and an admin has pre-created the app via infra/create-api-app-registration.ps1. Accepts a bare GUID or an `api://<clientId>` URI.')
 param apiAudience string = ''
 
+@description('Optional — bring-your-own (BYO) storage account. When empty (default), the template creates a new storage account. When set to a full ARM resource ID (e.g. /subscriptions/<sub>/resourceGroups/<rg>/providers/Microsoft.Storage/storageAccounts/<name>), the template skips creating the main storage account and uses the existing one for AzureWebJobsStorage and the Function App deployment cache. The BYO account MUST already contain these child resources (created out-of-band): blob containers app-package, state, images, backup; queues sp-indexer-q, sp-indexer-q-poison; tables failedFiles, runState, watermark. The deployer also needs User Access Administrator (or Owner) on the resource group of the BYO storage account so role assignments can be created.')
+param existingStorageAccountResourceId string = ''
+
 var shouldCreateAppRegistration = enableSecurityTrimming && empty(apiAudience)
+
+// BYO storage helpers. existingStorageAccountResourceId is parsed once here.
+var useExistingStorage = !empty(existingStorageAccountResourceId)
+var existingStorageRg = useExistingStorage ? split(existingStorageAccountResourceId, '/')[4] : ''
+var existingStorageName = useExistingStorage ? last(split(existingStorageAccountResourceId, '/')) : ''
 
 // ============================================================================
 // Operational defaults — baked in; override post-deployment via app settings
@@ -90,19 +98,36 @@ var searchSku = 'basic'                        // vector search requires Basic+
 // Derived names
 // ============================================================================
 
-var nameSuffix = take(uniqueString(resourceGroup().id, baseName), 6)
+// Fail-fast input validation for `baseName`. Without this guard, ARM accepts
+// the parameter and only fails later when it tries to create a nested resource
+// (typically the storage account) whose name contains the offending character
+// — the resulting "InvalidParameter" error doesn't mention `baseName` and is
+// hard to diagnose. The trick below substitutes a long ALL-CAPS sentinel
+// string for `baseName` whenever the input contains any disallowed character;
+// every derived resource name then includes that sentinel, ARM's name
+// validator rejects the deployment, and the error message in the portal/CLI
+// surfaces the allowed character set verbatim so the user can fix the input.
+var baseNameIsValid = baseName == toLower(baseName) && !contains(baseName, ' ') && !contains(baseName, '_') && !contains(baseName, '.')
+var safeBaseName = baseNameIsValid ? baseName : 'INVALID-baseName-must-match-a-z-0-9-and-hyphens-only-no-spaces-underscores-dots-or-uppercase'
 
-var functionAppName = '${baseName}-func-${nameSuffix}'
-// baseName is @minLength 3 / @maxLength 16; stripping hyphens plus the literal
-// 'st' (2 chars) + nameSuffix (6 chars) yields at most 24 chars and at least
-// 8 (all-hyphen degenerate case) — both within Azure's storage-name bounds.
-var storageName = toLower('${replace(baseName, '-', '')}st${nameSuffix}')
-var appInsightsName = '${baseName}-insights'
-var logAnalyticsName = '${baseName}-logs'
-var keyVaultName = take('${baseName}-kv-${nameSuffix}', 24)
-var searchServiceName = take(toLower('${baseName}-search-${nameSuffix}'), 60)
-var foundryAccountName = take('${baseName}-foundry-${nameSuffix}', 60)
-var docIntelName = take('${baseName}-docintel-${nameSuffix}', 60)
+var nameSuffix = take(uniqueString(resourceGroup().id, safeBaseName), 6)
+
+var functionAppName = '${safeBaseName}-func-${nameSuffix}'
+// safeBaseName is @minLength 3 / @maxLength 16 (when valid); stripping hyphens
+// plus the literal 'st' (2 chars) + nameSuffix (6 chars) yields at most 24
+// chars and at least 8 (all-hyphen degenerate case) — both within Azure's
+// storage-name bounds. Invalid input flows through as the long sentinel
+// above, which deliberately exceeds the limit and fails the deployment.
+var storageName = toLower('${replace(safeBaseName, '-', '')}st${nameSuffix}')
+// Dedicated storage account used ONLY for Microsoft.Resources/deploymentScripts
+// payloads (see scriptStorage resource below for the full why). 'ds' = "deploy scripts".
+var scriptStorageName = take(toLower('${replace(safeBaseName, '-', '')}ds${nameSuffix}'), 24)
+var appInsightsName = '${safeBaseName}-insights'
+var logAnalyticsName = '${safeBaseName}-logs'
+var keyVaultName = take('${safeBaseName}-kv-${nameSuffix}', 24)
+var searchServiceName = take(toLower('${safeBaseName}-search-${nameSuffix}'), 60)
+var foundryAccountName = take('${safeBaseName}-foundry-${nameSuffix}', 60)
+var docIntelName = take('${safeBaseName}-docintel-${nameSuffix}', 60)
 
 var deployContainerName = 'app-package'
 var stateContainerName = 'state'
@@ -133,9 +158,21 @@ var websiteContributorRoleId = 'de139f84-1756-47ae-9be6-808fbbe84772'
 
 // ============================================================================
 // Storage
+//
+// Two scenarios:
+//   1. Default: create a new storage account (`storageAccount`) plus its child
+//      blob containers, queues, and tables. allowSharedKeyAccess is false —
+//      the Function App authenticates with managed identity.
+//   2. Bring-your-own: when existingStorageAccountResourceId is set, skip the
+//      create-new resources entirely and reference the customer's storage
+//      account via the `existing` keyword (the SA may live in a different RG).
+//      The customer MUST pre-create the 9 child resources (4 containers + 2
+//      queues + 3 tables — names from the `Derived names` block above) out of
+//      band, because the deployer typically lacks Storage Account Contributor
+//      on the BYO SA's RG.
 // ============================================================================
 
-resource storageAccount 'Microsoft.Storage/storageAccounts@2023-05-01' = {
+resource storageAccount 'Microsoft.Storage/storageAccounts@2023-05-01' = if (!useExistingStorage) {
   name: storageName
   location: location
   sku: { name: 'Standard_LRS' }
@@ -148,64 +185,117 @@ resource storageAccount 'Microsoft.Storage/storageAccounts@2023-05-01' = {
   }
 }
 
-resource blobService 'Microsoft.Storage/storageAccounts/blobServices@2023-05-01' = {
+resource blobService 'Microsoft.Storage/storageAccounts/blobServices@2023-05-01' = if (!useExistingStorage) {
   parent: storageAccount
   name: 'default'
 }
 
-resource deployContainer 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-05-01' = {
+resource deployContainer 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-05-01' = if (!useExistingStorage) {
   parent: blobService
   name: deployContainerName
 }
 
-resource stateContainer 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-05-01' = {
+resource stateContainer 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-05-01' = if (!useExistingStorage) {
   parent: blobService
   name: stateContainerName
 }
 
-resource imagesContainer 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-05-01' = {
+resource imagesContainer 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-05-01' = if (!useExistingStorage) {
   parent: blobService
   name: imagesContainerName
 }
 
-resource backupContainer 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-05-01' = {
+resource backupContainer 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-05-01' = if (!useExistingStorage) {
   parent: blobService
   name: backupContainerName
 }
 
-resource queueService 'Microsoft.Storage/storageAccounts/queueServices@2023-05-01' = {
+resource queueService 'Microsoft.Storage/storageAccounts/queueServices@2023-05-01' = if (!useExistingStorage) {
   parent: storageAccount
   name: 'default'
 }
 
-resource indexerQueue 'Microsoft.Storage/storageAccounts/queueServices/queues@2023-05-01' = {
+resource indexerQueue 'Microsoft.Storage/storageAccounts/queueServices/queues@2023-05-01' = if (!useExistingStorage) {
   parent: queueService
   name: indexerQueueName
 }
 
-resource indexerPoisonQueue 'Microsoft.Storage/storageAccounts/queueServices/queues@2023-05-01' = {
+resource indexerPoisonQueue 'Microsoft.Storage/storageAccounts/queueServices/queues@2023-05-01' = if (!useExistingStorage) {
   parent: queueService
   name: indexerPoisonQueueName
 }
 
-resource tableService 'Microsoft.Storage/storageAccounts/tableServices@2023-05-01' = {
+resource tableService 'Microsoft.Storage/storageAccounts/tableServices@2023-05-01' = if (!useExistingStorage) {
   parent: storageAccount
   name: 'default'
 }
 
-resource failedFilesTable 'Microsoft.Storage/storageAccounts/tableServices/tables@2023-05-01' = {
+resource failedFilesTable 'Microsoft.Storage/storageAccounts/tableServices/tables@2023-05-01' = if (!useExistingStorage) {
   parent: tableService
   name: failedFilesTableName
 }
 
-resource runStateTable 'Microsoft.Storage/storageAccounts/tableServices/tables@2023-05-01' = {
+resource runStateTable 'Microsoft.Storage/storageAccounts/tableServices/tables@2023-05-01' = if (!useExistingStorage) {
   parent: tableService
   name: runStateTableName
 }
 
-resource watermarkTable 'Microsoft.Storage/storageAccounts/tableServices/tables@2023-05-01' = {
+resource watermarkTable 'Microsoft.Storage/storageAccounts/tableServices/tables@2023-05-01' = if (!useExistingStorage) {
   parent: tableService
   name: watermarkTableName
+}
+
+// BYO reference. Cross-RG scope so the existing SA may live in a different RG
+// than the deployment target.
+resource byoStorage 'Microsoft.Storage/storageAccounts@2023-05-01' existing = if (useExistingStorage) {
+  name: existingStorageName
+  scope: resourceGroup(existingStorageRg)
+}
+
+// Single source of truth used everywhere downstream — Function App appSettings,
+// role assignments, outputs.
+var effectiveStorageName = useExistingStorage ? byoStorage!.name : storageAccount!.name
+var effectiveStorageId = useExistingStorage ? byoStorage!.id : storageAccount!.id
+var effectiveBlobUri = useExistingStorage ? byoStorage!.properties.primaryEndpoints.blob : storageAccount!.properties.primaryEndpoints.blob
+var effectiveQueueUri = useExistingStorage ? byoStorage!.properties.primaryEndpoints.queue : storageAccount!.properties.primaryEndpoints.queue
+var effectiveTableUri = useExistingStorage ? byoStorage!.properties.primaryEndpoints.table : storageAccount!.properties.primaryEndpoints.table
+
+// ============================================================================
+// Deployment-script storage account
+//
+// Microsoft.Resources/deploymentScripts hosts its container payload + state
+// in a storage account. With no `storageAccountSettings`, Azure auto-provisions
+// one in the target RG — and that auto-SA inherits any tenant Azure Policy
+// such as "Storage accounts should prevent shared key access". When that
+// policy is enforced (effect=Deny/Modify), the auto-SA is created with
+// `allowSharedKeyAccess: false`, and the deployment script's SAS-key upload
+// fails with `KeyBasedAuthenticationNotPermitted` (HTTP 403,
+// `Code: DeploymentScriptOperationFailed`).
+//
+// The fix: explicitly provide `storageAccountSettings` pointing at THIS small
+// dedicated SA where shared-key access IS allowed. It is used ONLY at deploy
+// time (createSearchIndex, publishCode) and contains no application data.
+// Admins can carve a policy exemption matched on tag.purpose ==
+// 'arm-deployment-scripts' to allow this single SA past the org-wide deny.
+//
+// Future high-security alternative: containerSettings.subnetIds + private
+// endpoint on the script SA (requires a delegated subnet, private DNS, and a
+// separate exemption from any "no public network access" policy).
+// ============================================================================
+
+resource scriptStorage 'Microsoft.Storage/storageAccounts@2023-05-01' = {
+  name: scriptStorageName
+  location: location
+  sku: { name: 'Standard_LRS' }
+  kind: 'StorageV2'
+  tags: { purpose: 'arm-deployment-scripts' }
+  properties: {
+    minimumTlsVersion: 'TLS1_2'
+    supportsHttpsTrafficOnly: true
+    allowSharedKeyAccess: true
+    allowBlobPublicAccess: false
+    publicNetworkAccess: 'Enabled'
+  }
 }
 
 // ============================================================================
@@ -380,7 +470,7 @@ var effectiveApiClientId = enableSecurityTrimming ? (shouldCreateAppRegistration
 // ============================================================================
 
 resource deployerIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {
-  name: '${baseName}-deployer-${nameSuffix}'
+  name: '${safeBaseName}-deployer-${nameSuffix}'
   location: location
 }
 
@@ -457,7 +547,7 @@ echo "Index '$INDEX_NAME' is ready"
 '''
 
 resource createSearchIndex 'Microsoft.Resources/deploymentScripts@2023-08-01' = {
-  name: '${baseName}-create-index'
+  name: '${safeBaseName}-create-index'
   location: location
   kind: 'AzureCLI'
   identity: {
@@ -471,6 +561,13 @@ resource createSearchIndex 'Microsoft.Resources/deploymentScripts@2023-08-01' = 
     timeout: 'PT10M'
     retentionInterval: 'PT1H'
     cleanupPreference: 'OnSuccess'
+    // Pin the script's payload storage to our dedicated `scriptStorage` SA so
+    // shared-key access is guaranteed available — see the comment on the
+    // `scriptStorage` resource for the full rationale.
+    storageAccountSettings: {
+      storageAccountName: scriptStorage.name
+      storageAccountKey: scriptStorage.listKeys().keys[0].value
+    }
     environmentVariables: [
       { name: 'SEARCH_ENDPOINT', value: searchEndpoint }
       { name: 'SEARCH_NAME', value: searchServiceName }
@@ -489,7 +586,7 @@ resource createSearchIndex 'Microsoft.Resources/deploymentScripts@2023-08-01' = 
 // ============================================================================
 
 resource flexPlan 'Microsoft.Web/serverfarms@2024-04-01' = {
-  name: '${baseName}-plan'
+  name: '${safeBaseName}-plan'
   location: location
   kind: 'functionapp'
   sku: { tier: 'FlexConsumption', name: 'FC1' }
@@ -508,7 +605,7 @@ resource functionApp 'Microsoft.Web/sites@2024-04-01' = {
       deployment: {
         storage: {
           type: 'blobContainer'
-          value: '${storageAccount.properties.primaryEndpoints.blob}${deployContainerName}'
+          value: '${effectiveBlobUri}${deployContainerName}'
           authentication: { type: 'SystemAssignedIdentity' }
         }
       }
@@ -520,15 +617,15 @@ resource functionApp 'Microsoft.Web/sites@2024-04-01' = {
     }
     siteConfig: {
       appSettings: [
-        { name: 'AzureWebJobsStorage__accountName', value: storageAccount.name }
+        { name: 'AzureWebJobsStorage__accountName', value: effectiveStorageName }
         { name: 'AzureWebJobsStorage__credential', value: 'managedidentity' }
         // Explicit service URIs are required for Flex Consumption's scale
         // controller to poll the queue/table endpoints when AzureWebJobsStorage
         // uses MI auth — without these the scale controller never discovers
         // queue depth and queue-trigger functions stay idle.
-        { name: 'AzureWebJobsStorage__queueServiceUri', value: storageAccount.properties.primaryEndpoints.queue }
-        { name: 'AzureWebJobsStorage__blobServiceUri', value: storageAccount.properties.primaryEndpoints.blob }
-        { name: 'AzureWebJobsStorage__tableServiceUri', value: storageAccount.properties.primaryEndpoints.table }
+        { name: 'AzureWebJobsStorage__queueServiceUri', value: effectiveQueueUri }
+        { name: 'AzureWebJobsStorage__blobServiceUri', value: effectiveBlobUri }
+        { name: 'AzureWebJobsStorage__tableServiceUri', value: effectiveTableUri }
         { name: 'FUNCTIONS_EXTENSION_VERSION', value: '~4' }
         // Python v2 (decorator-based) programming model — without this the host
         // falls back to the legacy v1 model that needs a function.json per
@@ -653,8 +750,15 @@ resource docIntelAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01'
 }
 
 // Storage (blob / queue / table / account)
-resource storageBlobDataOwnerAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(storageAccount.id, storageBlobDataOwnerRoleId, functionApp.id)
+//
+// Two parallel sets — one scoped to the create-new SA, one scoped to the BYO
+// SA. The `if` guards ensure exactly one fires per deployment. For BYO, the
+// deployer needs `User Access Administrator` (or `Owner`) on the BYO SA's RG;
+// Bicep handles cross-RG role assignments on extension scopes natively when
+// the target is an `existing` resource with a `scope: resourceGroup(...)`.
+
+resource storageBlobDataOwnerAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (!useExistingStorage) {
+  name: guid(storageAccount!.id, storageBlobDataOwnerRoleId, functionApp.id)
   scope: storageAccount
   properties: {
     roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', storageBlobDataOwnerRoleId)
@@ -663,8 +767,8 @@ resource storageBlobDataOwnerAssignment 'Microsoft.Authorization/roleAssignments
   }
 }
 
-resource storageAccountContributorAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(storageAccount.id, storageAccountContributorRoleId, functionApp.id)
+resource storageAccountContributorAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (!useExistingStorage) {
+  name: guid(storageAccount!.id, storageAccountContributorRoleId, functionApp.id)
   scope: storageAccount
   properties: {
     roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', storageAccountContributorRoleId)
@@ -673,8 +777,8 @@ resource storageAccountContributorAssignment 'Microsoft.Authorization/roleAssign
   }
 }
 
-resource storageQueueDataContributorAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(storageAccount.id, storageQueueDataContributorRoleId, functionApp.id)
+resource storageQueueDataContributorAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (!useExistingStorage) {
+  name: guid(storageAccount!.id, storageQueueDataContributorRoleId, functionApp.id)
   scope: storageAccount
   properties: {
     roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', storageQueueDataContributorRoleId)
@@ -683,13 +787,26 @@ resource storageQueueDataContributorAssignment 'Microsoft.Authorization/roleAssi
   }
 }
 
-resource storageTableDataContributorAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(storageAccount.id, storageTableDataContributorRoleId, functionApp.id)
+resource storageTableDataContributorAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (!useExistingStorage) {
+  name: guid(storageAccount!.id, storageTableDataContributorRoleId, functionApp.id)
   scope: storageAccount
   properties: {
     roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', storageTableDataContributorRoleId)
     principalId: functionApp.identity.principalId
     principalType: 'ServicePrincipal'
+  }
+}
+
+module byoStorageRoleAssignments 'byo-storage-roles.bicep' = if (useExistingStorage) {
+  name: 'byo-storage-roles'
+  scope: resourceGroup(existingStorageRg)
+  params: {
+    storageAccountName: existingStorageName
+    principalId: functionApp.identity.principalId
+    storageBlobDataOwnerRoleId: storageBlobDataOwnerRoleId
+    storageAccountContributorRoleId: storageAccountContributorRoleId
+    storageQueueDataContributorRoleId: storageQueueDataContributorRoleId
+    storageTableDataContributorRoleId: storageTableDataContributorRoleId
   }
 }
 
@@ -732,7 +849,7 @@ resource deployerWebsiteRole 'Microsoft.Authorization/roleAssignments@2022-04-01
 }
 
 resource publishCode 'Microsoft.Resources/deploymentScripts@2023-08-01' = {
-  name: '${baseName}-publish-code'
+  name: '${safeBaseName}-publish-code'
   location: location
   kind: 'AzureCLI'
   identity: {
@@ -748,6 +865,13 @@ resource publishCode 'Microsoft.Resources/deploymentScripts@2023-08-01' = {
     // Keep the script container around on failure so logs are recoverable
     // via `az deployment-scripts show-log` instead of being purged with the resource.
     cleanupPreference: 'OnExpiration'
+    // Pin the script's payload storage to our dedicated `scriptStorage` SA so
+    // shared-key access is guaranteed available — see the comment on the
+    // `scriptStorage` resource for the full rationale.
+    storageAccountSettings: {
+      storageAccountName: scriptStorage.name
+      storageAccountKey: scriptStorage.listKeys().keys[0].value
+    }
     environmentVariables: [
       { name: 'PACKAGE_URL', value: packageReleaseUrl }
       { name: 'FUNCTION_APP_NAME', value: functionApp.name }
@@ -861,7 +985,10 @@ resource publishCode 'Microsoft.Resources/deploymentScripts@2023-08-01' = {
 
 output functionAppName string = functionApp.name
 output functionAppPrincipalId string = functionApp.identity.principalId
-output storageAccountName string = storageAccount.name
+output storageAccountName string = effectiveStorageName
+output storageAccountId string = effectiveStorageId
+output usedExistingStorage bool = useExistingStorage
+output scriptStorageAccountName string = scriptStorage.name
 output searchEndpoint string = searchEndpoint
 output foundryEndpoint string = foundryEndpoint
 output docIntelEndpoint string = docIntelEndpoint

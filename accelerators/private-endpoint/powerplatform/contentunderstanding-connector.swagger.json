@@ -1,0 +1,104 @@
+{
+  "swagger": "2.0",
+  "info": {
+    "title": "AzureCU_Private",
+    "description": "Custom connector for Azure AI Content Understanding (analyzers data plane). Calls go through the private endpoint when invoked from a Power Platform environment linked to the Enterprise Policy (VNet integration).",
+    "version": "1.0",
+    "contact": {
+      "name": "Platform Engineering"
+    }
+  },
+  "host": "REPLACE_WITH_AI_HOSTNAME",
+  "basePath": "/contentunderstanding",
+  "schemes": [ "https" ],
+  "consumes": [ "application/json" ],
+  "produces": [ "application/json" ],
+  "securityDefinitions": {
+    "api_key": {
+      "type": "apiKey",
+      "in": "header",
+      "name": "Ocp-Apim-Subscription-Key"
+    }
+  },
+  "security": [ { "api_key": [] } ],
+  "paths": {
+    "/analyzers": {
+      "get": {
+        "operationId": "ListAnalyzers",
+        "summary": "List analyzers",
+        "description": "Lists all custom analyzers in the Content Understanding account. Used as a connectivity health check.",
+        "parameters": [
+          {
+            "name": "api-version",
+            "in": "query",
+            "required": true,
+            "type": "string",
+            "default": "2024-12-01-preview",
+            "x-ms-visibility": "internal"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": { "type": "object" }
+          },
+          "default": {
+            "description": "Error",
+            "schema": { "type": "object" }
+          }
+        }
+      }
+    },
+    "/analyzers/{analyzerId}:analyze": {
+      "post": {
+        "operationId": "AnalyzeContent",
+        "summary": "Analyze content with an analyzer",
+        "description": "Submits a URL for analysis by the specified Content Understanding analyzer.",
+        "parameters": [
+          {
+            "name": "analyzerId",
+            "in": "path",
+            "required": true,
+            "type": "string",
+            "description": "Analyzer ID to invoke."
+          },
+          {
+            "name": "api-version",
+            "in": "query",
+            "required": true,
+            "type": "string",
+            "default": "2024-12-01-preview",
+            "x-ms-visibility": "internal"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "type": "object",
+              "properties": {
+                "url": {
+                  "type": "string",
+                  "description": "Publicly accessible URL of the content to analyze."
+                }
+              },
+              "required": [ "url" ]
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Accepted - operation queued",
+            "headers": {
+              "Operation-Location": { "type": "string" }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "schema": { "type": "object" }
+          }
+        }
+      }
+    }
+  }
+}
