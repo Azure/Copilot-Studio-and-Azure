@@ -27,26 +27,6 @@ What you get when you finish the steps below:
 
 ![Power Platform → VNet → Azure Content Understanding](docs/ppvnet-acu-solution-architecture.png)
 
-Repo layout:
-
-```
-infra/
-  deploy.bicep              # one-click unified template (source of azuredeploy.json)
-  azuredeploy.json          # compiled ARM template used by the Deploy to Azure button
-  main.bicep                # modular VNet + AI Services + PE + DNS template
-  main.bicepparam           # default address spaces (no env-specific values)
-  enterprise-policy.bicep   # Microsoft.PowerPlatform/enterprisePolicies (vnet)
-powerplatform/
-  contentunderstanding-connector.swagger.json   # OpenAPI 2.0 source
-  apiProperties.json                            # connection params / branding
-scripts/
-  load-env.ps1                     # parses .env into env vars
-  deploy.ps1                       # deploys infra/* using values from .env
-  link-enterprise-policy.ps1       # Enable/Disable subnet injection on PP env
-  create-and-test-connector.ps1    # pac connector create + connectivity test
-.env.example                       # copy to .env and fill in
-```
-
 ## Getting Started
 
 ### Video Walkthrough
@@ -75,7 +55,6 @@ You have two options. Pick **one** of them, then continue with the linking step.
 #### Option A — One-click ARM deploy (recommended)
 
 [![Deploy to Azure](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2Fgokseloral%2Faccelerator-privateendpoint%2Fmain%2Finfra%2Fazuredeploy.json)
-[![Visualize](https://raw.githubusercontent.com/Azure/azure-quickstart-templates/master/1-CONTRIBUTION-GUIDE/images/visualizebutton.svg?sanitize=true)](http://armviz.io/#/?load=https%3A%2F%2Fraw.githubusercontent.com%2Fgokseloral%2Faccelerator-privateendpoint%2Fmain%2Finfra%2Fazuredeploy.json)
 
 The portal blade collects:
 
@@ -163,7 +142,7 @@ Invoke-RestMethod -Uri $uri -Headers @{ Authorization = "Bearer $tok" } |
   Select-Object -ExpandProperty enterprisePolicies |
   ConvertTo-Json -Depth 10
 ```
-![PowerShell Command To Check Linked Status](image-1.png)
+
 Look for `"linkStatus": "Linked"` inside the `vNets` object — that confirms
 the policy is bound to the environment. (PowerShell's default table view
 truncates this nested field, so we pipe to `ConvertTo-Json` to see it in full.)
@@ -174,8 +153,6 @@ truncates this nested field, so we pipe to `ConvertTo-Json` to see it in full.)
 2. Add an action from the custom connector (e.g. **List Analyzers**).
 3. Create a new connection — supply the Cognitive Services key as the API key.
 4. Run the flow. A `200` response confirms Power Platform → delegated subnet → Private Endpoint → Azure AI Services is fully wired.
-
-![Testing Custom Connector connection to VNET via  Power Automate Flow](image.png)
 
 ### Troubleshooting
 
@@ -192,4 +169,32 @@ truncates this nested field, so we pipe to `ConvertTo-Json` to see it in full.)
 ```powershell
 ./scripts/link-enterprise-policy.ps1 -Unlink
 az group delete -n $env:AZURE_RESOURCE_GROUP --yes --no-wait
+```
+
+---
+
+Sample code provided as-is, no warranty. Review and adapt for production use
+(naming conventions, resource tags, RBAC, diagnostic settings, address-space
+planning, etc.).
+
+## Appendix
+
+### Repository Layout
+
+```
+infra/
+  deploy.bicep              # one-click unified template (source of azuredeploy.json)
+  azuredeploy.json          # compiled ARM template used by the Deploy to Azure button
+  main.bicep                # modular VNet + AI Services + PE + DNS template
+  main.bicepparam           # default address spaces (no env-specific values)
+  enterprise-policy.bicep   # Microsoft.PowerPlatform/enterprisePolicies (vnet)
+powerplatform/
+  contentunderstanding-connector.swagger.json   # OpenAPI 2.0 source
+  apiProperties.json                            # connection params / branding
+scripts/
+  load-env.ps1                     # parses .env into env vars
+  deploy.ps1                       # deploys infra/* using values from .env
+  link-enterprise-policy.ps1       # Enable/Disable subnet injection on PP env
+  create-and-test-connector.ps1    # pac connector create + connectivity test
+.env.example                       # copy to .env and fill in
 ```
