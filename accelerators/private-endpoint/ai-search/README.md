@@ -90,7 +90,7 @@ Pick **one** of the two options below, then continue with the linking step.
 
 ##### Option A — One-click ARM deploy (recommended)
 
-[![Deploy to Azure](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2F<org>%2FCopilot-Studio-and-Azure%2Fmain%2Faccelerators%2Fprivate-endpoint%2Fai-search%2Finfra%2Fazuredeploy-aisearch.json)
+[![Deploy to Azure](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2Fgokseloral%2FCopilot-Studio-and-Azure%2Fmain%2Faccelerators%2Fprivate-endpoint%2Fai-search%2Finfra%2Fazuredeploy-aisearch.json)
 
 The portal blade collects:
 
