@@ -1,0 +1,23 @@
+{
+  "properties": {
+    "connectionParameters": {
+      "api_key": {
+        "type": "securestring",
+        "uiDefinition": {
+          "displayName": "Query API Key",
+          "description": "Azure AI Search read-only query API key. Found in Azure Portal → AI Search service → Settings → Keys → Query keys. Do NOT use the admin key here.",
+          "tooltip": "Use a query key (read-only) for search operations. Admin keys are only needed for index management.",
+          "constraints": {
+            "tabIndex": 2,
+            "clearText": false,
+            "required": "true"
+          }
+        }
+      }
+    },
+    "iconBrandColor": "#0078D4",
+    "capabilities": [],
+    "publisher": "Internal",
+    "stackOwner": "Platform Engineering"
+  }
+}

@@ -1,0 +1,195 @@
+<mxfile host="app.diagrams.net" modified="2026-05-08T00:00:00.000Z" agent="copilot" version="24.0.0">
+  <diagram id="aisearch-pe-pp" name="AISearch-PE-PowerPlatform">
+    <mxGraphModel dx="1600" dy="900" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1500" pageHeight="900" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <!-- ============ Outer frame: Microsoft backbone ============ -->
+        <mxCell id="backbone" value="Microsoft backbone network" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F5F5F5;strokeColor=#9E9E9E;dashed=1;fontSize=14;fontStyle=1;align=left;verticalAlign=top;spacingLeft=12;spacingTop=8;" vertex="1" parent="1">
+          <mxGeometry x="20" y="20" width="1460" height="840" as="geometry" />
+        </mxCell>
+
+        <!-- ============ Power Platform box ============ -->
+        <mxCell id="ppBox" value="Power Platform (Managed Environment)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#EDE7F6;strokeColor=#5E35B1;fontSize=13;fontStyle=1;align=left;verticalAlign=top;spacingLeft=10;spacingTop=6;" vertex="1" parent="1">
+          <mxGeometry x="50" y="60" width="260" height="720" as="geometry" />
+        </mxCell>
+
+        <!-- Power Apps icon -->
+        <mxCell id="powerApps" value="Power Apps" style="shape=image;verticalLabelPosition=bottom;verticalAlign=top;html=1;image=img/lib/mscae/PowerApps.svg;fillColor=#742774;strokeColor=none;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="100" y="150" width="60" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- Power Automate icon -->
+        <mxCell id="powerAutomate" value="Power Automate" style="shape=image;verticalLabelPosition=bottom;verticalAlign=top;html=1;image=img/lib/mscae/LogicApps.svg;fillColor=#0066FF;strokeColor=none;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="100" y="380" width="60" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- Copilot Studio icon -->
+        <mxCell id="copilotStudio" value="Copilot Studio" style="shape=image;verticalLabelPosition=bottom;verticalAlign=top;html=1;image=img/lib/mscae/CopilotService.svg;fillColor=#5E35B1;strokeColor=none;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="100" y="570" width="60" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- Custom connector box at the PP boundary -->
+        <mxCell id="connector" value="Custom Connector&#xa;(Azure AI Search Private)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1B5E20;strokeColor=#004D00;fontColor=#FFFFFF;fontSize=10;fontStyle=1;align=center;" vertex="1" parent="1">
+          <mxGeometry x="295" y="370" width="140" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- ============ Azure main box ============ -->
+        <mxCell id="azureBox" value="Azure" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E3F2FD;strokeColor=#1565C0;fontSize=13;fontStyle=1;align=left;verticalAlign=top;spacingLeft=10;spacingTop=6;" vertex="1" parent="1">
+          <mxGeometry x="455" y="60" width="810" height="720" as="geometry" />
+        </mxCell>
+
+        <!-- ============ Primary Region ============ -->
+        <mxCell id="region1" value="Primary region (e.g. West US)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#1976D2;dashed=1;fontSize=12;fontStyle=1;align=left;verticalAlign=top;spacingLeft=8;spacingTop=4;" vertex="1" parent="1">
+          <mxGeometry x="470" y="105" width="780" height="370" as="geometry" />
+        </mxCell>
+
+        <!-- Primary VNet -->
+        <mxCell id="vnet1" value="vnet-&lt;base&gt;-srch  (primary VNet)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E8F5E9;strokeColor=#2E7D32;fontSize=11;fontStyle=1;align=left;verticalAlign=top;spacingLeft=6;spacingTop=4;" vertex="1" parent="1">
+          <mxGeometry x="490" y="150" width="740" height="300" as="geometry" />
+        </mxCell>
+
+        <!-- snet-powerplatform (delegated) -->
+        <mxCell id="snetPP1" value="snet-powerplatform&#xa;delegated: Microsoft.PowerPlatform/enterprisePolicies&#xa;/24 — no NSG, no route table" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF9C4;strokeColor=#F9A825;fontSize=10;fontStyle=1;align=center;" vertex="1" parent="1">
+          <mxGeometry x="510" y="200" width="220" height="80" as="geometry" />
+        </mxCell>
+
+        <!-- PP ENI (injected by PP) -->
+        <mxCell id="ppENI" value="PP ENI&#xa;(injected at runtime)" style="ellipse;whiteSpace=wrap;html=1;fillColor=#5E35B1;strokeColor=#311B92;fontColor=#FFFFFF;fontSize=9;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="550" y="310" width="120" height="50" as="geometry" />
+        </mxCell>
+
+        <!-- snet-pe -->
+        <mxCell id="snetPE" value="snet-pe" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#BBDEFB;strokeColor=#1565C0;fontSize=10;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="760" y="200" width="130" height="50" as="geometry" />
+        </mxCell>
+
+        <!-- Private Endpoint NIC -->
+        <mxCell id="peNIC" value="Private Endpoint&#xa;(AI Search)" style="ellipse;whiteSpace=wrap;html=1;fillColor=#1565C0;strokeColor=#0D47A1;fontColor=#FFFFFF;fontSize=9;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="763" y="280" width="120" height="50" as="geometry" />
+        </mxCell>
+
+        <!-- AI Search service -->
+        <mxCell id="aiSearch" value="Azure AI Search&#xa;publicNetworkAccess=disabled&#xa;SKU: basic / standard" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E1F5FE;strokeColor=#0277BD;fontSize=10;fontStyle=1;align=center;" vertex="1" parent="1">
+          <mxGeometry x="950" y="190" width="240" height="80" as="geometry" />
+        </mxCell>
+
+        <!-- Private DNS Zone -->
+        <mxCell id="dnsZone" value="Private DNS Zone&#xa;privatelink.search.windows.net&#xa;→ PE NIC private IP" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F3E5F5;strokeColor=#6A1B9A;fontSize=9;align=center;" vertex="1" parent="1">
+          <mxGeometry x="950" y="310" width="240" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- ============ Secondary Region ============ -->
+        <mxCell id="region2" value="Secondary region (e.g. East US — required for unitedstates geo)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#1976D2;dashed=1;fontSize=12;fontStyle=1;align=left;verticalAlign=top;spacingLeft=8;spacingTop=4;" vertex="1" parent="1">
+          <mxGeometry x="470" y="500" width="780" height="200" as="geometry" />
+        </mxCell>
+
+        <!-- Secondary VNet -->
+        <mxCell id="vnet2" value="vnet-&lt;base&gt;-srch-sec  (secondary VNet — failover)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E8F5E9;strokeColor=#2E7D32;fontSize=11;fontStyle=1;align=left;verticalAlign=top;spacingLeft=6;spacingTop=4;" vertex="1" parent="1">
+          <mxGeometry x="490" y="540" width="400" height="130" as="geometry" />
+        </mxCell>
+
+        <!-- snet-pp secondary -->
+        <mxCell id="snetPP2" value="snet-powerplatform&#xa;(delegated — failover subnet)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF9C4;strokeColor=#F9A825;fontSize=10;fontStyle=1;align=center;" vertex="1" parent="1">
+          <mxGeometry x="510" y="580" width="200" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- Enterprise Policy resource -->
+        <mxCell id="entPolicy" value="Enterprise Policy&#xa;Microsoft.PowerPlatform/enterprisePolicies&#xa;kind: NetworkInjection&#xa;location: PP geo (e.g. unitedstates)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF8E1;strokeColor=#F57F17;fontSize=9;fontStyle=1;align=center;" vertex="1" parent="1">
+          <mxGeometry x="950" y="520" width="280" height="90" as="geometry" />
+        </mxCell>
+
+        <!-- ============ Optional: AI-Ready Infra panel ============ -->
+        <mxCell id="optPanel" value="AI-Ready Infra (optional add-ons)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FAFAFA;strokeColor=#9E9E9E;fontSize=11;fontStyle=1;align=left;verticalAlign=top;spacingLeft=8;spacingTop=4;" vertex="1" parent="1">
+          <mxGeometry x="1285" y="60" width="175" height="720" as="geometry" />
+        </mxCell>
+
+        <mxCell id="kvBox" value="Key Vault&#xa;(store admin + query keys)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF3E0;strokeColor=#EF6C00;fontSize=9;align=center;" vertex="1" parent="1">
+          <mxGeometry x="1300" y="110" width="145" height="55" as="geometry" />
+        </mxCell>
+
+        <mxCell id="logBox" value="Log Analytics&#xa;Azure Monitor&#xa;(diagnostic settings)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E8EAF6;strokeColor=#3949AB;fontSize=9;align=center;" vertex="1" parent="1">
+          <mxGeometry x="1300" y="180" width="145" height="65" as="geometry" />
+        </mxCell>
+
+        <mxCell id="managedIdBox" value="Managed Identity&#xa;(indexer auth to&#xa;storage / Cosmos DB)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FCE4EC;strokeColor=#AD1457;fontSize=9;align=center;" vertex="1" parent="1">
+          <mxGeometry x="1300" y="260" width="145" height="65" as="geometry" />
+        </mxCell>
+
+        <mxCell id="apimBox" value="API Management&#xa;(optional gateway&#xa;for the search API)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E8F5E9;strokeColor=#2E7D32;fontSize=9;align=center;" vertex="1" parent="1">
+          <mxGeometry x="1300" y="340" width="145" height="65" as="geometry" />
+        </mxCell>
+
+        <mxCell id="cogsBox" value="Azure AI Services&#xa;(Cognitive Skills for&#xa;built-in vectorisation)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E1F5FE;strokeColor=#0277BD;fontSize=9;align=center;" vertex="1" parent="1">
+          <mxGeometry x="1300" y="420" width="145" height="65" as="geometry" />
+        </mxCell>
+
+        <mxCell id="policyBox" value="Azure Policy&#xa;Defender for Cloud&#xa;(governance)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FCE4EC;strokeColor=#AD1457;fontSize=9;align=center;" vertex="1" parent="1">
+          <mxGeometry x="1300" y="500" width="145" height="55" as="geometry" />
+        </mxCell>
+
+        <!-- ============ Connections / data flow ============ -->
+
+        <!-- Power Apps / Automate / Copilot Studio → Custom Connector -->
+        <mxCell id="e1" style="endArrow=classic;html=1;strokeColor=#5E35B1;strokeWidth=2;" edge="1" parent="1" source="powerApps" target="connector">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e2" style="endArrow=classic;html=1;strokeColor=#5E35B1;strokeWidth=2;" edge="1" parent="1" source="powerAutomate" target="connector">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e3" style="endArrow=classic;html=1;strokeColor=#5E35B1;strokeWidth=2;" edge="1" parent="1" source="copilotStudio" target="connector">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Custom Connector → snet-powerplatform (via Enterprise Policy / VNet injection) -->
+        <mxCell id="e4" value="subnet injection&#xa;(Microsoft backbone)" style="endArrow=classic;html=1;strokeColor=#1B5E20;strokeWidth=3;fontSize=9;labelBackgroundColor=#FFFFFF;" edge="1" parent="1" source="connector" target="snetPP1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Failover path to secondary subnet -->
+        <mxCell id="e5" value="failover" style="endArrow=classic;html=1;strokeColor=#1B5E20;strokeWidth=2;dashed=1;fontSize=9;labelBackgroundColor=#FFFFFF;" edge="1" parent="1" source="connector" target="snetPP2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- PP ENI → snet-pe (intra-VNet routing) -->
+        <mxCell id="e6" style="endArrow=classic;html=1;strokeColor=#1976D2;strokeWidth=2;" edge="1" parent="1" source="ppENI" target="snetPE">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- PE NIC → AI Search (private link) -->
+        <mxCell id="e7" value="private IP" style="endArrow=classic;html=1;strokeColor=#0D47A1;strokeWidth=2;fontSize=9;labelBackgroundColor=#FFFFFF;" edge="1" parent="1" source="peNIC" target="aiSearch">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- DNS zone → PE NIC (A record resolution) -->
+        <mxCell id="e8" value="A record → PE NIC IP" style="endArrow=classic;html=1;strokeColor=#6A1B9A;strokeWidth=1;dashed=1;fontSize=9;labelBackgroundColor=#FFFFFF;" edge="1" parent="1" source="dnsZone" target="peNIC">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Enterprise Policy links → both delegated subnets -->
+        <mxCell id="e9" value="links" style="endArrow=classic;html=1;strokeColor=#F57F17;strokeWidth=2;dashed=1;fontSize=9;labelBackgroundColor=#FFFFFF;" edge="1" parent="1" source="entPolicy" target="snetPP1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e10" value="links" style="endArrow=classic;html=1;strokeColor=#F57F17;strokeWidth=2;dashed=1;fontSize=9;labelBackgroundColor=#FFFFFF;" edge="1" parent="1" source="entPolicy" target="snetPP2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- ============ Annotations ============ -->
+        <mxCell id="lockNote" value="⛔ publicNetworkAccess=disabled&#xa;No public internet access" style="text;html=1;align=center;strokeColor=#C62828;fillColor=#FFEBEE;rounded=1;fontSize=9;" vertex="1" parent="1">
+          <mxGeometry x="950" y="140" width="240" height="40" as="geometry" />
+        </mxCell>
+
+        <mxCell id="ppNote" value="✅ Power Platform calls route via&#xa;delegated subnet → PE on Microsoft backbone" style="text;html=1;align=center;strokeColor=#2E7D32;fillColor=#E8F5E9;rounded=1;fontSize=9;" vertex="1" parent="1">
+          <mxGeometry x="295" y="450" width="155" height="50" as="geometry" />
+        </mxCell>
+
+        <!-- Legend -->
+        <mxCell id="legend" value="Legend&#xa;━━  Power Platform call path&#xa;━━  Subnet injection (VNet / Microsoft backbone)&#xa;┄┄  DNS A-record / Enterprise Policy binding&#xa;━━  Private Link (PaaS)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#9E9E9E;fontSize=9;align=left;verticalAlign=top;spacingLeft=8;spacingTop=6;" vertex="1" parent="1">
+          <mxGeometry x="50" y="700" width="260" height="100" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

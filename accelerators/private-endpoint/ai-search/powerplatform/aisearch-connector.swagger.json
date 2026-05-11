@@ -1,0 +1,387 @@
+{
+  "swagger": "2.0",
+  "info": {
+    "title": "AzureAISearch_Private",
+    "description": "Custom connector for Azure AI Search query data plane. All search, get-document, and list-indexes calls route through the Power Platform Enterprise Policy (VNet injection) to reach the private endpoint when invoked from a linked Managed Environment. Uses a read-only query API key — no index management operations are exposed.",
+    "version": "1.0",
+    "contact": {
+      "name": "Platform Engineering"
+    }
+  },
+  "host": "REPLACE_WITH_SEARCH_HOSTNAME",
+  "basePath": "/",
+  "schemes": [ "https" ],
+  "consumes": [ "application/json" ],
+  "produces": [ "application/json" ],
+  "securityDefinitions": {
+    "api_key": {
+      "type": "apiKey",
+      "in": "header",
+      "name": "api-key",
+      "description": "Azure AI Search query API key (read-only). Found in Azure Portal → AI Search → Settings → Keys → Query keys."
+    }
+  },
+  "security": [ { "api_key": [] } ],
+  "paths": {
+    "/indexes": {
+      "get": {
+        "operationId": "ListIndexes",
+        "summary": "List indexes",
+        "description": "Returns the list of indexes in the Azure AI Search service. Useful as a connectivity health check and to discover available index names.",
+        "x-ms-visibility": "important",
+        "parameters": [
+          {
+            "$ref": "#/parameters/ApiVersion"
+          },
+          {
+            "name": "$select",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "description": "Comma-separated list of index properties to retrieve. Defaults to all properties. Example: name,fields.",
+            "x-ms-visibility": "advanced"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK — list of indexes returned.",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "value": {
+                  "type": "array",
+                  "description": "Array of index definitions.",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "name": {
+                        "type": "string",
+                        "description": "Name of the index."
+                      },
+                      "fields": {
+                        "type": "array",
+                        "description": "Field definitions.",
+                        "items": { "type": "object" }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error response.",
+            "schema": { "$ref": "#/definitions/ErrorResponse" }
+          }
+        }
+      }
+    },
+    "/indexes/{indexName}/docs/search.post.search": {
+      "post": {
+        "operationId": "SearchDocuments",
+        "summary": "Search documents",
+        "description": "Executes a full-featured search query against an index. Supports full-text search, filters, facets, sorting, pagination, field selection, highlight, and semantic ranking.",
+        "x-ms-visibility": "important",
+        "parameters": [
+          {
+            "name": "indexName",
+            "in": "path",
+            "required": true,
+            "type": "string",
+            "description": "Name of the index to search.",
+            "x-ms-summary": "Index name"
+          },
+          {
+            "$ref": "#/parameters/ApiVersion"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "description": "Search request body.",
+            "schema": {
+              "type": "object",
+              "required": [ "search" ],
+              "properties": {
+                "search": {
+                  "type": "string",
+                  "description": "Search text. Use '*' to return all documents.",
+                  "x-ms-summary": "Search text"
+                },
+                "filter": {
+                  "type": "string",
+                  "description": "OData $filter expression to restrict results. Example: category eq 'Hotels'.",
+                  "x-ms-summary": "Filter",
+                  "x-ms-visibility": "advanced"
+                },
+                "orderby": {
+                  "type": "string",
+                  "description": "Comma-separated list of fields to sort by. Append ' desc' for descending. Example: rating desc.",
+                  "x-ms-summary": "Order by",
+                  "x-ms-visibility": "advanced"
+                },
+                "select": {
+                  "type": "string",
+                  "description": "Comma-separated list of fields to return. Defaults to all retrievable fields.",
+                  "x-ms-summary": "Select fields",
+                  "x-ms-visibility": "advanced"
+                },
+                "top": {
+                  "type": "integer",
+                  "format": "int32",
+                  "description": "Maximum number of results to return (default 50, max 1000).",
+                  "x-ms-summary": "Top (max results)",
+                  "x-ms-visibility": "advanced"
+                },
+                "skip": {
+                  "type": "integer",
+                  "format": "int32",
+                  "description": "Number of results to skip for pagination.",
+                  "x-ms-summary": "Skip",
+                  "x-ms-visibility": "advanced"
+                },
+                "count": {
+                  "type": "boolean",
+                  "description": "If true, include the total result count (@odata.count) in the response.",
+                  "x-ms-summary": "Include count",
+                  "x-ms-visibility": "advanced"
+                },
+                "searchFields": {
+                  "type": "string",
+                  "description": "Comma-separated list of field names to search. Defaults to all searchable fields.",
+                  "x-ms-summary": "Search fields",
+                  "x-ms-visibility": "advanced"
+                },
+                "facets": {
+                  "type": "array",
+                  "description": "Facet expressions. Example: [\"category,count:5\"].",
+                  "x-ms-summary": "Facets",
+                  "x-ms-visibility": "advanced",
+                  "items": { "type": "string" }
+                },
+                "highlight": {
+                  "type": "string",
+                  "description": "Comma-separated list of fields for hit highlighting.",
+                  "x-ms-summary": "Highlight fields",
+                  "x-ms-visibility": "advanced"
+                },
+                "queryType": {
+                  "type": "string",
+                  "description": "Query type: 'simple' (default) or 'full' (Lucene) or 'semantic'.",
+                  "enum": [ "simple", "full", "semantic" ],
+                  "x-ms-summary": "Query type",
+                  "x-ms-visibility": "advanced"
+                },
+                "semanticConfiguration": {
+                  "type": "string",
+                  "description": "Name of the semantic configuration to use (required when queryType='semantic').",
+                  "x-ms-summary": "Semantic configuration",
+                  "x-ms-visibility": "advanced"
+                },
+                "captions": {
+                  "type": "string",
+                  "description": "Semantic captions: 'extractive' or 'none' (default).",
+                  "enum": [ "extractive", "none" ],
+                  "x-ms-summary": "Captions",
+                  "x-ms-visibility": "advanced"
+                },
+                "answers": {
+                  "type": "string",
+                  "description": "Semantic answers: 'extractive' or 'none' (default).",
+                  "enum": [ "extractive", "none" ],
+                  "x-ms-summary": "Answers",
+                  "x-ms-visibility": "advanced"
+                },
+                "vectorQueries": {
+                  "type": "array",
+                  "description": "Vector query specifications for hybrid or pure vector search.",
+                  "x-ms-summary": "Vector queries",
+                  "x-ms-visibility": "advanced",
+                  "items": { "type": "object" }
+                }
+              }
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK — search results returned.",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "@odata.count": {
+                  "type": "integer",
+                  "description": "Total number of results (included when count=true)."
+                },
+                "@search.facets": {
+                  "type": "object",
+                  "description": "Facet aggregations."
+                },
+                "@search.answers": {
+                  "type": "array",
+                  "description": "Semantic answers (when queryType=semantic and answers=extractive).",
+                  "items": { "type": "object" }
+                },
+                "value": {
+                  "type": "array",
+                  "description": "Array of matching documents.",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "@search.score": {
+                        "type": "number",
+                        "description": "BM25 relevance score for this document."
+                      },
+                      "@search.highlights": {
+                        "type": "object",
+                        "description": "Hit highlight fragments per field."
+                      },
+                      "@search.captions": {
+                        "type": "array",
+                        "description": "Semantic captions for this document.",
+                        "items": { "type": "object" }
+                      }
+                    },
+                    "additionalProperties": true
+                  }
+                },
+                "@odata.nextLink": {
+                  "type": "string",
+                  "description": "URL to retrieve the next page of results."
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error response.",
+            "schema": { "$ref": "#/definitions/ErrorResponse" }
+          }
+        }
+      }
+    },
+    "/indexes/{indexName}/docs/{key}": {
+      "get": {
+        "operationId": "GetDocument",
+        "summary": "Get document by key",
+        "description": "Retrieves a single document from an index by its key field value.",
+        "x-ms-visibility": "important",
+        "parameters": [
+          {
+            "name": "indexName",
+            "in": "path",
+            "required": true,
+            "type": "string",
+            "description": "Name of the index.",
+            "x-ms-summary": "Index name"
+          },
+          {
+            "name": "key",
+            "in": "path",
+            "required": true,
+            "type": "string",
+            "description": "The document key value (the value of the field marked as 'key: true' in the index schema).",
+            "x-ms-summary": "Document key"
+          },
+          {
+            "$ref": "#/parameters/ApiVersion"
+          },
+          {
+            "name": "$select",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "description": "Comma-separated list of fields to return. Defaults to all retrievable fields.",
+            "x-ms-summary": "Select fields",
+            "x-ms-visibility": "advanced"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK — document returned.",
+            "schema": {
+              "type": "object",
+              "additionalProperties": true
+            }
+          },
+          "404": {
+            "description": "Not Found — document key does not exist in the index.",
+            "schema": { "$ref": "#/definitions/ErrorResponse" }
+          },
+          "default": {
+            "description": "Error response.",
+            "schema": { "$ref": "#/definitions/ErrorResponse" }
+          }
+        }
+      }
+    },
+    "/indexes/{indexName}/docs/$count": {
+      "get": {
+        "operationId": "CountDocuments",
+        "summary": "Count documents",
+        "description": "Returns the total number of documents in an index. Can optionally apply an OData filter to count matching documents only.",
+        "x-ms-visibility": "advanced",
+        "parameters": [
+          {
+            "name": "indexName",
+            "in": "path",
+            "required": true,
+            "type": "string",
+            "description": "Name of the index.",
+            "x-ms-summary": "Index name"
+          },
+          {
+            "$ref": "#/parameters/ApiVersion"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK — document count returned as a plain integer.",
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          "default": {
+            "description": "Error response.",
+            "schema": { "$ref": "#/definitions/ErrorResponse" }
+          }
+        }
+      }
+    }
+  },
+  "parameters": {
+    "ApiVersion": {
+      "name": "api-version",
+      "in": "query",
+      "required": true,
+      "type": "string",
+      "default": "2024-07-01",
+      "x-ms-visibility": "internal",
+      "description": "Azure AI Search REST API version."
+    }
+  },
+  "definitions": {
+    "ErrorResponse": {
+      "type": "object",
+      "properties": {
+        "error": {
+          "type": "object",
+          "properties": {
+            "code": {
+              "type": "string",
+              "description": "Error code."
+            },
+            "message": {
+              "type": "string",
+              "description": "Human-readable error message."
+            },
+            "details": {
+              "type": "array",
+              "items": { "type": "object" }
+            }
+          }
+        }
+      }
+    }
+  }
+}
