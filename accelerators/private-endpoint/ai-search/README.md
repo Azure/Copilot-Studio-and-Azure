@@ -30,44 +30,7 @@ What you get when you finish the steps below:
 
 ## Architecture
 
-```
-Power Platform (Managed Environment)
-  │
-  ├─ Power Apps / Power Automate
-  │       │
-  │       ▼
-  │  Custom Connector (AI Search)
-  │       │
-  │  [Enterprise Policy — VNet injection]
-  │       │
-  │       ▼ (subnet injection, Microsoft backbone)
-Azure ─────────────────────────────────────────────────────
-  │
-  Primary Region (e.g. West US)
-  │   ┌────────────────────────────────────────────────────┐
-  │   │ VNet (vnet-<base>-srch)                            │
-  │   │  ┌──────────────────┐   ┌─────────────────────┐   │
-  │   │  │ snet-powerplatform│   │     snet-pe          │   │
-  │   │  │ (delegated /24)   │──▶│  Private Endpoint   │   │
-  │   │  └──────────────────┘   └──────────┬──────────┘   │
-  │   └────────────────────────────────────┼───────────────┘
-  │                                        │ private IP
-  │                                        ▼
-  │   ┌──────────────────────────────────────────────────┐
-  │   │ Azure AI Search  (publicNetworkAccess=disabled)  │
-  │   │ <name>.search.windows.net  →  PE NIC IP (DNS)    │
-  │   └──────────────────────────────────────────────────┘
-  │
-  │   Private DNS zone: privatelink.search.windows.net
-  │
-  Secondary Region (e.g. East US — required for unitedstates geo)
-  │   ┌───────────────────────────────────┐
-  │   │ VNet (vnet-<base>-srch-sec)       │
-  │   │  ┌──────────────────────────────┐ │
-  │   │  │ snet-powerplatform (failover) │ │
-  │   │  └──────────────────────────────┘ │
-  │   └───────────────────────────────────┘
-```
+![Power Platform → VNet → Azure AI Search](docs/ppvnet-aisearch-solution-architecture.png)
 
 The architecture diagram source is at [docs/aisearch-architecture.drawio](docs/aisearch-architecture.drawio).
 
@@ -224,13 +187,29 @@ The script:
 > the connector authoring host and **does not use VNet injection**. Always
 > validate from a real flow run.
 
-### 3. End-to-end test from a Power Automate flow
+### 3. End-to-end test from a Power Automate flow or Copilot Studio
+
+#### Option A — Power Automate flow
 
 1. In the linked PP environment, create a flow with an **Instant** trigger.
 2. Add an action from the custom connector — **Search Documents**.
 3. Create a new connection — supply the query API key.
 4. Fill in `indexName` and a `search` value (e.g. `*`).
 5. Run the flow. A `200` response confirms **Power Platform → delegated subnet → Private Endpoint → AI Search** is fully wired.
+
+#### Option B — Copilot Studio
+
+1. Open [Copilot Studio](https://copilotstudio.microsoft.com/) in the same linked Managed Environment.
+2. Create or open an existing agent (copilot).
+3. Go to **Tools** (left nav) → **+ Add a tool** → search for your AI Search custom connector name.
+4. Select the **Search Documents** action and add it to the agent.
+5. In the **Test your agent** pane, send a message that triggers the search (e.g. _"Search for documents about pricing"_).
+6. The agent should invoke the connector action and return results from your AI Search index — confirming private connectivity works end-to-end from Copilot Studio through the VNet.
+
+> **Note:** Copilot Studio uses the same VNet injection path as Power Automate
+> when the environment is linked to an Enterprise Policy. If the flow test
+> works but Copilot Studio does not, verify the connector is in a Dataverse
+> solution visible to the agent's environment.
 
 ### 4. Verify the Enterprise Policy link
 

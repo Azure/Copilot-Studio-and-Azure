@@ -202,7 +202,9 @@ the AI Services endpoint:
 > through the connector authoring host (`*.azure-apihub.net`) and **does not
 > use VNet injection**. Always validate from a real flow run (step 3).
 
-### 3. End-to-end test from a Power Automate flow
+### 3. End-to-end test from a Power Automate flow or Copilot Studio
+
+#### Option A — Power Automate flow
 
 1. In the linked PP environment, create a flow with an **Instant** trigger.
 2. Add an action from the custom connector (e.g. **List Analyzers**).
@@ -211,9 +213,21 @@ the AI Services endpoint:
 
 ![Testing connectivity to Azure Content Understanding service via custom connector action used in PowerAutomate flow](image-3.png)
 
-You can also test the connectivity from Copilot Studio > Tools and search for the connector name
+#### Option B — Copilot Studio
+
+1. Open [Copilot Studio](https://copilotstudio.microsoft.com/) in the same linked Managed Environment.
+2. Create or open an existing agent (copilot).
+3. Go to **Tools** (left nav) → **+ Add a tool** → search for your Content Understanding custom connector name.
+4. Select the **Analyze content with an analyzer** action and add it to the agent.
+5. In the **Test your agent** pane, send a message that triggers the analyze action (e.g. _"Analyze this document"_ with relevant input).
+6. The agent should invoke the connector action and return the analyzer result — confirming private connectivity works end-to-end from Copilot Studio through the VNet.
 
 ![Listing actions of the connector from Copilot Studio Agent Tools](image-4.png)
+
+> **Note:** Copilot Studio uses the same VNet injection path as Power Automate
+> when the environment is linked to an Enterprise Policy. If the flow test
+> works but Copilot Studio does not, verify the connector is in a Dataverse
+> solution visible to the agent's environment.
 
 ### Verify the Enterprise Policy link (optional)
 
