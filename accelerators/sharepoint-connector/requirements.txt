@@ -77,7 +77,7 @@ httpx==0.28.1
     # via
     #   openai
     #   sharepoint-connector
-idna==3.11
+idna==3.15
     # via
     #   anyio
     #   httpx
