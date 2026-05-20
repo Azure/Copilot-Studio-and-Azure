@@ -1,6 +1,10 @@
 # Environment variables (contains secrets)
 .env
 
+# Bicep parameter file (may contain tenant/subscription IDs, client secrets)
+# Use main.bicepparam.sample as the committed template.
+infra/main.bicepparam
+
 # Python
 __pycache__/
 *.py[cod]

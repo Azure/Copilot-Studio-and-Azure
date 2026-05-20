@@ -1,0 +1,450 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "_generator": {
+      "name": "bicep",
+      "version": "0.42.1.51946",
+      "templateHash": "9160199708270349547"
+    }
+  },
+  "parameters": {
+    "baseName": {
+      "type": "string",
+      "defaultValue": "pvsrch",
+      "minLength": 3,
+      "maxLength": 11,
+      "metadata": {
+        "description": "Base name (3–11 chars, lowercase alphanumerics) used to derive resource names."
+      }
+    },
+    "powerPlatformRegion": {
+      "type": "string",
+      "defaultValue": "unitedstates",
+      "allowedValues": [
+        "unitedstates",
+        "europe",
+        "unitedkingdom",
+        "japan",
+        "australia",
+        "asia",
+        "singapore",
+        "sweden"
+      ],
+      "metadata": {
+        "description": "Power Platform geography. Drives primary/secondary Azure regions and Enterprise Policy location."
+      }
+    },
+    "powerPlatformEnvironmentId": {
+      "type": "string",
+      "metadata": {
+        "description": "GUID of the target Power Platform environment (not the org URL)."
+      }
+    },
+    "provisionAiSearch": {
+      "type": "bool",
+      "defaultValue": true,
+      "metadata": {
+        "description": "Set true (default) to provision a new Azure AI Search service. Set false to use an existing service — supply existingAiSearchResourceId."
+      }
+    },
+    "existingAiSearchResourceId": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Full ARM resource ID of an existing Azure AI Search service. Used only when provisionAiSearch=false."
+      }
+    },
+    "aiSearchSku": {
+      "type": "string",
+      "defaultValue": "basic",
+      "allowedValues": [
+        "basic",
+        "standard",
+        "standard2",
+        "standard3",
+        "storage_optimized_l1",
+        "storage_optimized_l2"
+      ],
+      "metadata": {
+        "description": "SKU for the new Azure AI Search service. Free tier is excluded — it does not support private endpoints."
+      }
+    },
+    "vnetAddressPrefix": {
+      "type": "string",
+      "defaultValue": "10.60.0.0/16",
+      "metadata": {
+        "description": "Primary VNet address space. Ignored when provisionVnet=false."
+      }
+    },
+    "peSubnetPrefix": {
+      "type": "string",
+      "defaultValue": "10.60.1.0/24",
+      "metadata": {
+        "description": "Private Endpoint subnet address prefix (/24 recommended). Ignored when provisionVnet=false."
+      }
+    },
+    "ppSubnetPrefix": {
+      "type": "string",
+      "defaultValue": "10.60.2.0/24",
+      "metadata": {
+        "description": "Power Platform delegated subnet address prefix (must be /24, no NSG, no route table). Ignored when provisionVnet=false."
+      }
+    },
+    "secondaryVnetAddressPrefix": {
+      "type": "string",
+      "defaultValue": "10.61.0.0/16",
+      "metadata": {
+        "description": "Secondary VNet address space. Must not overlap primary. Ignored for single-region PP geos or when provisionVnet=false."
+      }
+    },
+    "secondaryPpSubnetPrefix": {
+      "type": "string",
+      "defaultValue": "10.61.2.0/24",
+      "metadata": {
+        "description": "Secondary Power Platform delegated subnet prefix (/24). Ignored for single-region PP geos or when provisionVnet=false."
+      }
+    },
+    "provisionVnet": {
+      "type": "bool",
+      "defaultValue": true,
+      "metadata": {
+        "description": "Set true (default) to create new VNets with subnets. Set false to use existing VNets — supply the existing resource IDs below."
+      }
+    },
+    "existingVnetId": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Full ARM resource ID of the existing primary VNet. Used only when provisionVnet=false. Must already contain a PE subnet and a PP-delegated subnet."
+      }
+    },
+    "existingPeSubnetName": {
+      "type": "string",
+      "defaultValue": "snet-pe",
+      "metadata": {
+        "description": "Name of the existing PE subnet in the primary VNet. Used only when provisionVnet=false. Must have privateEndpointNetworkPolicies=Disabled."
+      }
+    },
+    "existingPpSubnetName": {
+      "type": "string",
+      "defaultValue": "snet-powerplatform",
+      "metadata": {
+        "description": "Name of the existing Power Platform delegated subnet in the primary VNet. Used only when provisionVnet=false. Must be /24, delegated to Microsoft.PowerPlatform/enterprisePolicies."
+      }
+    },
+    "existingSecondaryVnetId": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Full ARM resource ID of the existing secondary VNet. Used only when provisionVnet=false and the PP geo is multi-region. Must contain a PP-delegated subnet."
+      }
+    },
+    "existingSecondaryPpSubnetName": {
+      "type": "string",
+      "defaultValue": "snet-powerplatform",
+      "metadata": {
+        "description": "Name of the existing PP-delegated subnet in the secondary VNet. Used only when provisionVnet=false and the PP geo is multi-region."
+      }
+    },
+    "tags": {
+      "type": "object",
+      "defaultValue": {
+        "workload": "aisearch-pe",
+        "managedBy": "bicep"
+      },
+      "metadata": {
+        "description": "Tags applied to all provisioned resources."
+      }
+    }
+  },
+  "variables": {
+    "regionMap": {
+      "unitedstates": {
+        "primary": "westus",
+        "secondary": "eastus",
+        "singleRegion": false
+      },
+      "europe": {
+        "primary": "westeurope",
+        "secondary": "northeurope",
+        "singleRegion": false
+      },
+      "unitedkingdom": {
+        "primary": "uksouth",
+        "secondary": "ukwest",
+        "singleRegion": false
+      },
+      "japan": {
+        "primary": "japaneast",
+        "secondary": "japanwest",
+        "singleRegion": false
+      },
+      "australia": {
+        "primary": "australiaeast",
+        "secondary": "australiasoutheast",
+        "singleRegion": false
+      },
+      "asia": {
+        "primary": "southeastasia",
+        "secondary": "eastasia",
+        "singleRegion": false
+      },
+      "singapore": {
+        "primary": "southeastasia",
+        "secondary": "",
+        "singleRegion": true
+      },
+      "sweden": {
+        "primary": "swedencentral",
+        "secondary": "",
+        "singleRegion": true
+      }
+    },
+    "primaryLocation": "[variables('regionMap')[parameters('powerPlatformRegion')].primary]",
+    "secondaryLocation": "[variables('regionMap')[parameters('powerPlatformRegion')].secondary]",
+    "isSingleRegionGeo": "[variables('regionMap')[parameters('powerPlatformRegion')].singleRegion]",
+    "vnetName": "[format('vnet-{0}-srch', parameters('baseName'))]",
+    "vnetSecName": "[format('vnet-{0}-srch-sec', parameters('baseName'))]",
+    "peSubnetName": "snet-pe",
+    "ppSubnetName": "snet-powerplatform",
+    "searchName": "[format('srch-{0}-{1}', parameters('baseName'), uniqueString(resourceGroup().id))]",
+    "peName": "[format('pe-{0}', variables('searchName'))]",
+    "peNicName": "[format('nic-{0}', variables('peName'))]",
+    "privateDnsZone": "privatelink.search.windows.net",
+    "searchResourceId": "[if(parameters('provisionAiSearch'), resourceId('Microsoft.Search/searchServices', variables('searchName')), parameters('existingAiSearchResourceId'))]",
+    "resolvedVnetId": "[if(parameters('provisionVnet'), resourceId('Microsoft.Network/virtualNetworks', variables('vnetName')), parameters('existingVnetId'))]",
+    "resolvedPeSubnetName": "[if(parameters('provisionVnet'), variables('peSubnetName'), parameters('existingPeSubnetName'))]",
+    "resolvedPpSubnetName": "[if(parameters('provisionVnet'), variables('ppSubnetName'), parameters('existingPpSubnetName'))]",
+    "resolvedSecVnetId": "[if(parameters('provisionVnet'), if(variables('isSingleRegionGeo'), '', resourceId('Microsoft.Network/virtualNetworks', variables('vnetSecName'))), parameters('existingSecondaryVnetId'))]",
+    "resolvedSecPpSubnetName": "[if(parameters('provisionVnet'), variables('ppSubnetName'), parameters('existingSecondaryPpSubnetName'))]"
+  },
+  "resources": [
+    {
+      "condition": "[parameters('provisionVnet')]",
+      "type": "Microsoft.Network/virtualNetworks",
+      "apiVersion": "2024-05-01",
+      "name": "[variables('vnetName')]",
+      "location": "[variables('primaryLocation')]",
+      "tags": "[parameters('tags')]",
+      "properties": {
+        "addressSpace": {
+          "addressPrefixes": [
+            "[parameters('vnetAddressPrefix')]"
+          ]
+        },
+        "subnets": [
+          {
+            "name": "[variables('peSubnetName')]",
+            "properties": {
+              "addressPrefixes": [
+                "[parameters('peSubnetPrefix')]"
+              ],
+              "privateEndpointNetworkPolicies": "Disabled"
+            }
+          },
+          {
+            "name": "[variables('ppSubnetName')]",
+            "properties": {
+              "addressPrefixes": [
+                "[parameters('ppSubnetPrefix')]"
+              ],
+              "delegations": [
+                {
+                  "name": "Microsoft.PowerPlatform.enterprisePolicies",
+                  "properties": {
+                    "serviceName": "Microsoft.PowerPlatform/enterprisePolicies"
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "condition": "[and(parameters('provisionVnet'), not(variables('isSingleRegionGeo')))]",
+      "type": "Microsoft.Network/virtualNetworks",
+      "apiVersion": "2024-05-01",
+      "name": "[variables('vnetSecName')]",
+      "location": "[variables('secondaryLocation')]",
+      "tags": "[parameters('tags')]",
+      "properties": {
+        "addressSpace": {
+          "addressPrefixes": [
+            "[parameters('secondaryVnetAddressPrefix')]"
+          ]
+        },
+        "subnets": [
+          {
+            "name": "[variables('ppSubnetName')]",
+            "properties": {
+              "addressPrefixes": [
+                "[parameters('secondaryPpSubnetPrefix')]"
+              ],
+              "delegations": [
+                {
+                  "name": "Microsoft.PowerPlatform.enterprisePolicies",
+                  "properties": {
+                    "serviceName": "Microsoft.PowerPlatform/enterprisePolicies"
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "condition": "[parameters('provisionAiSearch')]",
+      "type": "Microsoft.Search/searchServices",
+      "apiVersion": "2024-06-01-preview",
+      "name": "[variables('searchName')]",
+      "location": "[variables('primaryLocation')]",
+      "tags": "[parameters('tags')]",
+      "sku": {
+        "name": "[parameters('aiSearchSku')]"
+      },
+      "identity": {
+        "type": "SystemAssigned"
+      },
+      "properties": {
+        "replicaCount": 1,
+        "partitionCount": 1,
+        "publicNetworkAccess": "disabled",
+        "networkRuleSet": {
+          "bypass": "AzurePortal",
+          "ipRules": []
+        },
+        "disableLocalAuth": false,
+        "authOptions": {
+          "aadOrApiKey": {
+            "aadAuthFailureMode": "http401WithBearerChallenge"
+          }
+        }
+      }
+    },
+    {
+      "type": "Microsoft.Network/privateDnsZones",
+      "apiVersion": "2024-06-01",
+      "name": "[variables('privateDnsZone')]",
+      "location": "global",
+      "tags": "[parameters('tags')]"
+    },
+    {
+      "type": "Microsoft.Network/privateDnsZones/virtualNetworkLinks",
+      "apiVersion": "2024-06-01",
+      "name": "[format('{0}/{1}', variables('privateDnsZone'), format('{0}-link', variables('vnetName')))]",
+      "location": "global",
+      "properties": {
+        "registrationEnabled": false,
+        "virtualNetwork": {
+          "id": "[variables('resolvedVnetId')]"
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Network/privateDnsZones', variables('privateDnsZone'))]",
+        "[resourceId('Microsoft.Network/virtualNetworks', variables('vnetName'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.Network/privateEndpoints",
+      "apiVersion": "2024-05-01",
+      "name": "[variables('peName')]",
+      "location": "[variables('primaryLocation')]",
+      "tags": "[parameters('tags')]",
+      "properties": {
+        "customNetworkInterfaceName": "[variables('peNicName')]",
+        "subnet": {
+          "id": "[format('{0}/subnets/{1}', variables('resolvedVnetId'), variables('resolvedPeSubnetName'))]"
+        },
+        "privateLinkServiceConnections": [
+          {
+            "name": "[format('plsc-{0}', variables('searchName'))]",
+            "properties": {
+              "privateLinkServiceId": "[variables('searchResourceId')]",
+              "groupIds": [
+                "searchService"
+              ]
+            }
+          }
+        ]
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Search/searchServices', variables('searchName'))]",
+        "[resourceId('Microsoft.Network/virtualNetworks', variables('vnetName'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.Network/privateEndpoints/privateDnsZoneGroups",
+      "apiVersion": "2024-05-01",
+      "name": "[format('{0}/{1}', variables('peName'), 'default')]",
+      "properties": {
+        "privateDnsZoneConfigs": [
+          {
+            "name": "[replace(variables('privateDnsZone'), '.', '-')]",
+            "properties": {
+              "privateDnsZoneId": "[resourceId('Microsoft.Network/privateDnsZones', variables('privateDnsZone'))]"
+            }
+          }
+        ]
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Network/privateDnsZones/virtualNetworkLinks', variables('privateDnsZone'), format('{0}-link', variables('vnetName')))]",
+        "[resourceId('Microsoft.Network/privateDnsZones', variables('privateDnsZone'))]",
+        "[resourceId('Microsoft.Network/privateEndpoints', variables('peName'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.PowerPlatform/enterprisePolicies",
+      "apiVersion": "2020-10-30-preview",
+      "name": "[format('ep-vnet-{0}-srch', parameters('baseName'))]",
+      "location": "[parameters('powerPlatformRegion')]",
+      "tags": "[parameters('tags')]",
+      "kind": "NetworkInjection",
+      "properties": {
+        "networkInjection": {
+          "virtualNetworks": "[if(variables('isSingleRegionGeo'), createArray(createObject('id', variables('resolvedVnetId'), 'subnet', createObject('name', variables('resolvedPpSubnetName')))), createArray(createObject('id', variables('resolvedVnetId'), 'subnet', createObject('name', variables('resolvedPpSubnetName'))), createObject('id', variables('resolvedSecVnetId'), 'subnet', createObject('name', variables('resolvedSecPpSubnetName')))))]"
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Network/privateEndpoints/privateDnsZoneGroups', variables('peName'), 'default')]",
+        "[resourceId('Microsoft.Network/virtualNetworks', variables('vnetName'))]",
+        "[resourceId('Microsoft.Network/virtualNetworks', variables('vnetSecName'))]"
+      ]
+  ],
+  "outputs": {
+    "searchServiceName": {
+      "type": "string",
+      "value": "[if(parameters('provisionAiSearch'), variables('searchName'), last(split(parameters('existingAiSearchResourceId'), '/')))]"
+    },
+    "searchServiceEndpoint": {
+      "type": "string",
+      "value": "[format('https://{0}.search.windows.net/', if(parameters('provisionAiSearch'), variables('searchName'), last(split(parameters('existingAiSearchResourceId'), '/'))))]"
+    },
+    "enterprisePolicyId": {
+      "type": "string",
+      "value": "[resourceId('Microsoft.PowerPlatform/enterprisePolicies', format('ep-vnet-{0}-srch', parameters('baseName')))]"
+    },
+    "ppSubnetResourceId": {
+      "type": "string",
+      "value": "[format('{0}/subnets/{1}', variables('resolvedVnetId'), variables('resolvedPpSubnetName'))]"
+    },
+    "ppSubnetSecondaryResourceId": {
+      "type": "string",
+      "value": "[if(variables('isSingleRegionGeo'), '', format('{0}/subnets/{1}', variables('resolvedSecVnetId'), variables('resolvedSecPpSubnetName')))]"
+    },
+    "vnetId": {
+      "type": "string",
+      "value": "[variables('resolvedVnetId')]"
+    },
+    "peSubnetResourceId": {
+      "type": "string",
+      "value": "[format('{0}/subnets/{1}', variables('resolvedVnetId'), variables('resolvedPeSubnetName'))]"
+    },
+    "privateDnsZoneId": {
+      "type": "string",
+      "value": "[resourceId('Microsoft.Network/privateDnsZones', variables('privateDnsZone'))]"
+    }
+  }
+}

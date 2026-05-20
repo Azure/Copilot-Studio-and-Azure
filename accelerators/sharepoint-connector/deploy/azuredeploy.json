@@ -6,7 +6,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.42.1.51946",
-      "templateHash": "517038233000661893"
+      "templateHash": "3782251719402292499"
     }
   },
   "parameters": {
@@ -15,7 +15,7 @@
       "minLength": 3,
       "maxLength": 16,
       "metadata": {
-        "description": "Base name for every resource. Lowercase letters / digits / hyphens. Used as a prefix; a short uniqueness hash is appended where Azure requires globally-unique names."
+        "description": "Base name for every resource. Required pattern: lowercase letters, digits, and hyphens only (regex `^[a-z0-9-]+$`). NO spaces, NO underscores, NO dots, NO uppercase letters. Used as a prefix; a short uniqueness hash is appended where Azure requires globally-unique names. Examples: `mycorp-sp` (valid); `My Corp SP` or `mycorp_sp` (invalid)."
       }
     },
     "location": {
@@ -44,11 +44,21 @@
       "metadata": {
         "description": "Optional escape hatch — only relevant when enableSecurityTrimming = true. When empty, the template creates the Entra app registration itself via the Microsoft Graph Bicep extension (deployer needs `Application Administrator`). When non-empty, the template skips creating the app and uses this client ID instead — useful when the deployer lacks Graph privileges and an admin has pre-created the app via infra/create-api-app-registration.ps1. Accepts a bare GUID or an `api://<clientId>` URI."
       }
+    },
+    "existingStorageAccountResourceId": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Optional — bring-your-own (BYO) storage account. When empty (default), the template creates a new storage account. When set to a full ARM resource ID (e.g. /subscriptions/<sub>/resourceGroups/<rg>/providers/Microsoft.Storage/storageAccounts/<name>), the template skips creating the main storage account and uses the existing one for AzureWebJobsStorage and the Function App deployment cache. The BYO account MUST already contain these child resources (created out-of-band): blob containers app-package, state, images, backup; queues sp-indexer-q, sp-indexer-q-poison; tables failedFiles, runState, watermark. The deployer also needs User Access Administrator (or Owner) on the resource group of the BYO storage account so role assignments can be created."
+      }
     }
   },
   "variables": {
     "$fxv#0": "{\n  \"name\": \"sharepoint-index\",\n  \"fields\": [\n    { \"name\": \"chunk_id\",          \"type\": \"Edm.String\",                   \"key\": true,  \"filterable\": true,  \"searchable\": false, \"sortable\": false, \"facetable\": false, \"retrievable\": true },\n    { \"name\": \"parent_id\",         \"type\": \"Edm.String\",                   \"filterable\": true,  \"searchable\": false, \"sortable\": false, \"facetable\": false, \"retrievable\": true },\n    { \"name\": \"content_text\",      \"type\": \"Edm.String\",                   \"filterable\": false, \"searchable\": true,  \"sortable\": false, \"facetable\": false, \"retrievable\": true, \"analyzer\": \"standard.lucene\" },\n    { \"name\": \"title\",             \"type\": \"Edm.String\",                   \"filterable\": true,  \"searchable\": true,  \"sortable\": true,  \"facetable\": false, \"retrievable\": true, \"analyzer\": \"standard.lucene\" },\n    { \"name\": \"source_url\",        \"type\": \"Edm.String\",                   \"filterable\": false, \"searchable\": false, \"sortable\": false, \"facetable\": false, \"retrievable\": true },\n    { \"name\": \"last_modified\",     \"type\": \"Edm.DateTimeOffset\",           \"filterable\": true,  \"sortable\": true,    \"facetable\": false, \"retrievable\": true },\n    { \"name\": \"content_type\",      \"type\": \"Edm.String\",                   \"filterable\": true,  \"searchable\": false, \"sortable\": false, \"facetable\": false, \"retrievable\": true },\n    { \"name\": \"file_size\",         \"type\": \"Edm.Int64\",                    \"filterable\": true,  \"sortable\": false,   \"facetable\": false, \"retrievable\": true },\n    { \"name\": \"created_by\",        \"type\": \"Edm.String\",                   \"filterable\": true,  \"searchable\": false, \"sortable\": false, \"facetable\": false, \"retrievable\": true },\n    { \"name\": \"modified_by\",       \"type\": \"Edm.String\",                   \"filterable\": true,  \"searchable\": false, \"sortable\": false, \"facetable\": false, \"retrievable\": true },\n    { \"name\": \"drive_name\",        \"type\": \"Edm.String\",                   \"filterable\": true,  \"searchable\": false, \"sortable\": false, \"facetable\": false, \"retrievable\": true },\n    { \"name\": \"permission_ids\",    \"type\": \"Collection(Edm.String)\",       \"filterable\": true,  \"searchable\": false, \"facetable\": false, \"retrievable\": true },\n    { \"name\": \"has_image\",         \"type\": \"Edm.Boolean\",                  \"filterable\": true,  \"sortable\": false,   \"facetable\": false, \"retrievable\": true },\n    { \"name\": \"content_path\",      \"type\": \"Edm.String\",                   \"filterable\": false, \"searchable\": false, \"sortable\": false, \"facetable\": false, \"retrievable\": true },\n    {\n      \"name\": \"location_metadata\",\n      \"type\": \"Edm.ComplexType\",\n      \"fields\": [\n        { \"name\": \"page_number\",       \"type\": \"Edm.Int32\",  \"filterable\": true,  \"sortable\": false, \"facetable\": false, \"retrievable\": true },\n        { \"name\": \"bounding_polygons\", \"type\": \"Edm.String\", \"filterable\": false, \"searchable\": false, \"sortable\": false, \"facetable\": false, \"retrievable\": true }\n      ]\n    },\n    {\n      \"name\": \"content_embedding\",\n      \"type\": \"Collection(Edm.Single)\",\n      \"searchable\": true,\n      \"retrievable\": true,\n      \"filterable\": false,\n      \"sortable\": false,\n      \"facetable\": false,\n      \"dimensions\": 1024,\n      \"vectorSearchProfile\": \"sp-vector-profile\"\n    }\n  ],\n  \"vectorSearch\": {\n    \"algorithms\": [\n      { \"name\": \"sp-hnsw\", \"kind\": \"hnsw\" }\n    ],\n    \"profiles\": [\n      {\n        \"name\": \"sp-vector-profile\",\n        \"algorithm\": \"sp-hnsw\",\n        \"vectorizer\": \"sp-aivision-vectorizer\"\n      }\n    ],\n    \"vectorizers\": [\n      {\n        \"name\": \"sp-aivision-vectorizer\",\n        \"kind\": \"aiServicesVision\",\n        \"aiServicesVisionParameters\": {\n          \"resourceUri\": \"__MULTIMODAL_ENDPOINT__\",\n          \"modelVersion\": \"__MULTIMODAL_MODEL_VERSION__\"\n        }\n      }\n    ]\n  },\n  \"semantic\": {\n    \"defaultConfiguration\": \"sp-semantic-config\",\n    \"configurations\": [\n      {\n        \"name\": \"sp-semantic-config\",\n        \"prioritizedFields\": {\n          \"titleField\": { \"fieldName\": \"title\" },\n          \"prioritizedContentFields\": [\n            { \"fieldName\": \"content_text\" }\n          ]\n        }\n      }\n    ]\n  }\n}\n",
     "shouldCreateAppRegistration": "[and(parameters('enableSecurityTrimming'), empty(parameters('apiAudience')))]",
+    "useExistingStorage": "[not(empty(parameters('existingStorageAccountResourceId')))]",
+    "existingStorageRg": "[if(variables('useExistingStorage'), split(parameters('existingStorageAccountResourceId'), '/')[4], '')]",
+    "existingStorageName": "[if(variables('useExistingStorage'), last(split(parameters('existingStorageAccountResourceId'), '/')), '')]",
     "packageReleaseUrl": "https://github.com/gokseloral/Copilot-Studio-and-Azure/releases/download/sharepoint-connector-latest/sharepoint-connector.zip",
     "searchIndexName": "sharepoint-index",
     "indexerSchedule": "0 0 * * * *",
@@ -70,15 +80,18 @@
     "extractImages": true,
     "alwaysAllowedIds": "",
     "searchSku": "basic",
-    "nameSuffix": "[take(uniqueString(resourceGroup().id, parameters('baseName')), 6)]",
-    "functionAppName": "[format('{0}-func-{1}', parameters('baseName'), variables('nameSuffix'))]",
-    "storageName": "[toLower(format('{0}st{1}', replace(parameters('baseName'), '-', ''), variables('nameSuffix')))]",
-    "appInsightsName": "[format('{0}-insights', parameters('baseName'))]",
-    "logAnalyticsName": "[format('{0}-logs', parameters('baseName'))]",
-    "keyVaultName": "[take(format('{0}-kv-{1}', parameters('baseName'), variables('nameSuffix')), 24)]",
-    "searchServiceName": "[take(toLower(format('{0}-search-{1}', parameters('baseName'), variables('nameSuffix'))), 60)]",
-    "foundryAccountName": "[take(format('{0}-foundry-{1}', parameters('baseName'), variables('nameSuffix')), 60)]",
-    "docIntelName": "[take(format('{0}-docintel-{1}', parameters('baseName'), variables('nameSuffix')), 60)]",
+    "baseNameIsValid": "[and(and(and(equals(parameters('baseName'), toLower(parameters('baseName'))), not(contains(parameters('baseName'), ' '))), not(contains(parameters('baseName'), '_'))), not(contains(parameters('baseName'), '.')))]",
+    "safeBaseName": "[if(variables('baseNameIsValid'), parameters('baseName'), 'INVALID-baseName-must-match-a-z-0-9-and-hyphens-only-no-spaces-underscores-dots-or-uppercase')]",
+    "nameSuffix": "[take(uniqueString(resourceGroup().id, variables('safeBaseName')), 6)]",
+    "functionAppName": "[format('{0}-func-{1}', variables('safeBaseName'), variables('nameSuffix'))]",
+    "storageName": "[toLower(format('{0}st{1}', replace(variables('safeBaseName'), '-', ''), variables('nameSuffix')))]",
+    "scriptStorageName": "[take(toLower(format('{0}ds{1}', replace(variables('safeBaseName'), '-', ''), variables('nameSuffix'))), 24)]",
+    "appInsightsName": "[format('{0}-insights', variables('safeBaseName'))]",
+    "logAnalyticsName": "[format('{0}-logs', variables('safeBaseName'))]",
+    "keyVaultName": "[take(format('{0}-kv-{1}', variables('safeBaseName'), variables('nameSuffix')), 24)]",
+    "searchServiceName": "[take(toLower(format('{0}-search-{1}', variables('safeBaseName'), variables('nameSuffix'))), 60)]",
+    "foundryAccountName": "[take(format('{0}-foundry-{1}', variables('safeBaseName'), variables('nameSuffix')), 60)]",
+    "docIntelName": "[take(format('{0}-docintel-{1}', variables('safeBaseName'), variables('nameSuffix')), 60)]",
     "deployContainerName": "app-package",
     "stateContainerName": "state",
     "backupContainerName": "backup",
@@ -99,6 +112,8 @@
     "storageTableDataContributorRoleId": "0a9a7e1f-b9d0-4cc4-a60d-0319b160aaa3",
     "keyVaultSecretsUserRoleId": "4633458b-17de-408a-b874-0445c86b69e6",
     "websiteContributorRoleId": "de139f84-1756-47ae-9be6-808fbbe84772",
+    "effectiveStorageName": "[if(variables('useExistingStorage'), variables('existingStorageName'), variables('storageName'))]",
+    "effectiveStorageId": "[if(variables('useExistingStorage'), extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('existingStorageRg')), 'Microsoft.Storage/storageAccounts', variables('existingStorageName')), resourceId('Microsoft.Storage/storageAccounts', variables('storageName')))]",
     "apiAppUniqueName": "[format('sharepoint-connector-api-{0}', variables('nameSuffix'))]",
     "accessAsUserScopeId": "[guid(resourceGroup().id, 'access_as_user')]",
     "graphAppId": "00000003-0000-0000-c000-000000000000",
@@ -115,6 +130,7 @@
   },
   "resources": {
     "storageAccount": {
+      "condition": "[not(variables('useExistingStorage'))]",
       "type": "Microsoft.Storage/storageAccounts",
       "apiVersion": "2023-05-01",
       "name": "[variables('storageName')]",
@@ -131,6 +147,7 @@
       }
     },
     "blobService": {
+      "condition": "[not(variables('useExistingStorage'))]",
       "type": "Microsoft.Storage/storageAccounts/blobServices",
       "apiVersion": "2023-05-01",
       "name": "[format('{0}/{1}', variables('storageName'), 'default')]",
@@ -139,6 +156,7 @@
       ]
     },
     "deployContainer": {
+      "condition": "[not(variables('useExistingStorage'))]",
       "type": "Microsoft.Storage/storageAccounts/blobServices/containers",
       "apiVersion": "2023-05-01",
       "name": "[format('{0}/{1}/{2}', variables('storageName'), 'default', variables('deployContainerName'))]",
@@ -147,6 +165,7 @@
       ]
     },
     "stateContainer": {
+      "condition": "[not(variables('useExistingStorage'))]",
       "type": "Microsoft.Storage/storageAccounts/blobServices/containers",
       "apiVersion": "2023-05-01",
       "name": "[format('{0}/{1}/{2}', variables('storageName'), 'default', variables('stateContainerName'))]",
@@ -155,6 +174,7 @@
       ]
     },
     "imagesContainer": {
+      "condition": "[not(variables('useExistingStorage'))]",
       "type": "Microsoft.Storage/storageAccounts/blobServices/containers",
       "apiVersion": "2023-05-01",
       "name": "[format('{0}/{1}/{2}', variables('storageName'), 'default', variables('imagesContainerName'))]",
@@ -163,6 +183,7 @@
       ]
     },
     "backupContainer": {
+      "condition": "[not(variables('useExistingStorage'))]",
       "type": "Microsoft.Storage/storageAccounts/blobServices/containers",
       "apiVersion": "2023-05-01",
       "name": "[format('{0}/{1}/{2}', variables('storageName'), 'default', variables('backupContainerName'))]",
@@ -171,6 +192,7 @@
       ]
     },
     "queueService": {
+      "condition": "[not(variables('useExistingStorage'))]",
       "type": "Microsoft.Storage/storageAccounts/queueServices",
       "apiVersion": "2023-05-01",
       "name": "[format('{0}/{1}', variables('storageName'), 'default')]",
@@ -179,6 +201,7 @@
       ]
     },
     "indexerQueue": {
+      "condition": "[not(variables('useExistingStorage'))]",
       "type": "Microsoft.Storage/storageAccounts/queueServices/queues",
       "apiVersion": "2023-05-01",
       "name": "[format('{0}/{1}/{2}', variables('storageName'), 'default', variables('indexerQueueName'))]",
@@ -187,6 +210,7 @@
       ]
     },
     "indexerPoisonQueue": {
+      "condition": "[not(variables('useExistingStorage'))]",
       "type": "Microsoft.Storage/storageAccounts/queueServices/queues",
       "apiVersion": "2023-05-01",
       "name": "[format('{0}/{1}/{2}', variables('storageName'), 'default', variables('indexerPoisonQueueName'))]",
@@ -195,6 +219,7 @@
       ]
     },
     "tableService": {
+      "condition": "[not(variables('useExistingStorage'))]",
       "type": "Microsoft.Storage/storageAccounts/tableServices",
       "apiVersion": "2023-05-01",
       "name": "[format('{0}/{1}', variables('storageName'), 'default')]",
@@ -203,6 +228,7 @@
       ]
     },
     "failedFilesTable": {
+      "condition": "[not(variables('useExistingStorage'))]",
       "type": "Microsoft.Storage/storageAccounts/tableServices/tables",
       "apiVersion": "2023-05-01",
       "name": "[format('{0}/{1}/{2}', variables('storageName'), 'default', variables('failedFilesTableName'))]",
@@ -211,6 +237,7 @@
       ]
     },
     "runStateTable": {
+      "condition": "[not(variables('useExistingStorage'))]",
       "type": "Microsoft.Storage/storageAccounts/tableServices/tables",
       "apiVersion": "2023-05-01",
       "name": "[format('{0}/{1}/{2}', variables('storageName'), 'default', variables('runStateTableName'))]",
@@ -219,12 +246,41 @@
       ]
     },
     "watermarkTable": {
+      "condition": "[not(variables('useExistingStorage'))]",
       "type": "Microsoft.Storage/storageAccounts/tableServices/tables",
       "apiVersion": "2023-05-01",
       "name": "[format('{0}/{1}/{2}', variables('storageName'), 'default', variables('watermarkTableName'))]",
       "dependsOn": [
         "tableService"
       ]
+    },
+    "byoStorage": {
+      "condition": "[variables('useExistingStorage')]",
+      "existing": true,
+      "type": "Microsoft.Storage/storageAccounts",
+      "apiVersion": "2023-05-01",
+      "resourceGroup": "[variables('existingStorageRg')]",
+      "name": "[variables('existingStorageName')]"
+    },
+    "scriptStorage": {
+      "type": "Microsoft.Storage/storageAccounts",
+      "apiVersion": "2023-05-01",
+      "name": "[variables('scriptStorageName')]",
+      "location": "[parameters('location')]",
+      "sku": {
+        "name": "Standard_LRS"
+      },
+      "kind": "StorageV2",
+      "tags": {
+        "purpose": "arm-deployment-scripts"
+      },
+      "properties": {
+        "minimumTlsVersion": "TLS1_2",
+        "supportsHttpsTrafficOnly": true,
+        "allowSharedKeyAccess": true,
+        "allowBlobPublicAccess": false,
+        "publicNetworkAccess": "Enabled"
+      }
     },
     "logAnalytics": {
       "type": "Microsoft.OperationalInsights/workspaces",
@@ -368,14 +424,14 @@
     "deployerIdentity": {
       "type": "Microsoft.ManagedIdentity/userAssignedIdentities",
       "apiVersion": "2023-01-31",
-      "name": "[format('{0}-deployer-{1}', parameters('baseName'), variables('nameSuffix'))]",
+      "name": "[format('{0}-deployer-{1}', variables('safeBaseName'), variables('nameSuffix'))]",
       "location": "[parameters('location')]"
     },
     "deployerSearchRole": {
       "type": "Microsoft.Authorization/roleAssignments",
       "apiVersion": "2022-04-01",
       "scope": "[resourceId('Microsoft.Search/searchServices', variables('searchServiceName'))]",
-      "name": "[guid(resourceId('Microsoft.Search/searchServices', variables('searchServiceName')), variables('searchServiceContributorRoleId'), resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-deployer-{1}', parameters('baseName'), variables('nameSuffix'))))]",
+      "name": "[guid(resourceId('Microsoft.Search/searchServices', variables('searchServiceName')), variables('searchServiceContributorRoleId'), resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-deployer-{1}', variables('safeBaseName'), variables('nameSuffix'))))]",
       "properties": {
         "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', variables('searchServiceContributorRoleId'))]",
         "principalId": "[reference('deployerIdentity').principalId]",
@@ -389,13 +445,13 @@
     "createSearchIndex": {
       "type": "Microsoft.Resources/deploymentScripts",
       "apiVersion": "2023-08-01",
-      "name": "[format('{0}-create-index', parameters('baseName'))]",
+      "name": "[format('{0}-create-index', variables('safeBaseName'))]",
       "location": "[parameters('location')]",
       "kind": "AzureCLI",
       "identity": {
         "type": "UserAssigned",
         "userAssignedIdentities": {
-          "[format('{0}', resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-deployer-{1}', parameters('baseName'), variables('nameSuffix'))))]": {}
+          "[format('{0}', resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-deployer-{1}', variables('safeBaseName'), variables('nameSuffix'))))]": {}
         }
       },
       "properties": {
@@ -403,6 +459,10 @@
         "timeout": "PT10M",
         "retentionInterval": "PT1H",
         "cleanupPreference": "OnSuccess",
+        "storageAccountSettings": {
+          "storageAccountName": "[variables('scriptStorageName')]",
+          "storageAccountKey": "[listKeys('scriptStorage', '2023-05-01').keys[0].value]"
+        },
         "environmentVariables": [
           {
             "name": "SEARCH_ENDPOINT",
@@ -425,13 +485,14 @@
       },
       "dependsOn": [
         "deployerIdentity",
-        "deployerSearchRole"
+        "deployerSearchRole",
+        "scriptStorage"
       ]
     },
     "flexPlan": {
       "type": "Microsoft.Web/serverfarms",
       "apiVersion": "2024-04-01",
-      "name": "[format('{0}-plan', parameters('baseName'))]",
+      "name": "[format('{0}-plan', variables('safeBaseName'))]",
       "location": "[parameters('location')]",
       "kind": "functionapp",
       "sku": {
@@ -452,13 +513,13 @@
         "type": "SystemAssigned"
       },
       "properties": {
-        "serverFarmId": "[resourceId('Microsoft.Web/serverfarms', format('{0}-plan', parameters('baseName')))]",
+        "serverFarmId": "[resourceId('Microsoft.Web/serverfarms', format('{0}-plan', variables('safeBaseName')))]",
         "httpsOnly": true,
         "functionAppConfig": {
           "deployment": {
             "storage": {
               "type": "blobContainer",
-              "value": "[format('{0}{1}', reference('storageAccount').primaryEndpoints.blob, variables('deployContainerName'))]",
+              "value": "[format('{0}{1}', if(variables('useExistingStorage'), reference('byoStorage').primaryEndpoints.blob, reference('storageAccount').primaryEndpoints.blob), variables('deployContainerName'))]",
               "authentication": {
                 "type": "SystemAssignedIdentity"
               }
@@ -477,7 +538,7 @@
           "appSettings": [
             {
               "name": "AzureWebJobsStorage__accountName",
-              "value": "[variables('storageName')]"
+              "value": "[variables('effectiveStorageName')]"
             },
             {
               "name": "AzureWebJobsStorage__credential",
@@ -485,15 +546,15 @@
             },
             {
               "name": "AzureWebJobsStorage__queueServiceUri",
-              "value": "[reference('storageAccount').primaryEndpoints.queue]"
+              "value": "[if(variables('useExistingStorage'), reference('byoStorage').primaryEndpoints.queue, reference('storageAccount').primaryEndpoints.queue)]"
             },
             {
               "name": "AzureWebJobsStorage__blobServiceUri",
-              "value": "[reference('storageAccount').primaryEndpoints.blob]"
+              "value": "[if(variables('useExistingStorage'), reference('byoStorage').primaryEndpoints.blob, reference('storageAccount').primaryEndpoints.blob)]"
             },
             {
               "name": "AzureWebJobsStorage__tableServiceUri",
-              "value": "[reference('storageAccount').primaryEndpoints.table]"
+              "value": "[if(variables('useExistingStorage'), reference('byoStorage').primaryEndpoints.table, reference('storageAccount').primaryEndpoints.table)]"
             },
             {
               "name": "FUNCTIONS_EXTENSION_VERSION",
@@ -653,6 +714,7 @@
       "dependsOn": [
         "apiApp",
         "appInsights",
+        "byoStorage",
         "flexPlan",
         "keyVault",
         "storageAccount"
@@ -734,6 +796,7 @@
       ]
     },
     "storageBlobDataOwnerAssignment": {
+      "condition": "[not(variables('useExistingStorage'))]",
       "type": "Microsoft.Authorization/roleAssignments",
       "apiVersion": "2022-04-01",
       "scope": "[resourceId('Microsoft.Storage/storageAccounts', variables('storageName'))]",
@@ -749,6 +812,7 @@
       ]
     },
     "storageAccountContributorAssignment": {
+      "condition": "[not(variables('useExistingStorage'))]",
       "type": "Microsoft.Authorization/roleAssignments",
       "apiVersion": "2022-04-01",
       "scope": "[resourceId('Microsoft.Storage/storageAccounts', variables('storageName'))]",
@@ -764,6 +828,7 @@
       ]
     },
     "storageQueueDataContributorAssignment": {
+      "condition": "[not(variables('useExistingStorage'))]",
       "type": "Microsoft.Authorization/roleAssignments",
       "apiVersion": "2022-04-01",
       "scope": "[resourceId('Microsoft.Storage/storageAccounts', variables('storageName'))]",
@@ -779,6 +844,7 @@
       ]
     },
     "storageTableDataContributorAssignment": {
+      "condition": "[not(variables('useExistingStorage'))]",
       "type": "Microsoft.Authorization/roleAssignments",
       "apiVersion": "2022-04-01",
       "scope": "[resourceId('Microsoft.Storage/storageAccounts', variables('storageName'))]",
@@ -812,7 +878,7 @@
       "type": "Microsoft.Authorization/roleAssignments",
       "apiVersion": "2022-04-01",
       "scope": "[resourceId('Microsoft.Web/sites', variables('functionAppName'))]",
-      "name": "[guid(resourceId('Microsoft.Web/sites', variables('functionAppName')), variables('websiteContributorRoleId'), resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-deployer-{1}', parameters('baseName'), variables('nameSuffix'))))]",
+      "name": "[guid(resourceId('Microsoft.Web/sites', variables('functionAppName')), variables('websiteContributorRoleId'), resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-deployer-{1}', variables('safeBaseName'), variables('nameSuffix'))))]",
       "properties": {
         "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', variables('websiteContributorRoleId'))]",
         "principalId": "[reference('deployerIdentity').principalId]",
@@ -826,13 +892,13 @@
     "publishCode": {
       "type": "Microsoft.Resources/deploymentScripts",
       "apiVersion": "2023-08-01",
-      "name": "[format('{0}-publish-code', parameters('baseName'))]",
+      "name": "[format('{0}-publish-code', variables('safeBaseName'))]",
       "location": "[parameters('location')]",
       "kind": "AzureCLI",
       "identity": {
         "type": "UserAssigned",
         "userAssignedIdentities": {
-          "[format('{0}', resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-deployer-{1}', parameters('baseName'), variables('nameSuffix'))))]": {}
+          "[format('{0}', resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-deployer-{1}', variables('safeBaseName'), variables('nameSuffix'))))]": {}
         }
       },
       "properties": {
@@ -840,6 +906,10 @@
         "timeout": "PT30M",
         "retentionInterval": "PT1H",
         "cleanupPreference": "OnExpiration",
+        "storageAccountSettings": {
+          "storageAccountName": "[variables('scriptStorageName')]",
+          "storageAccountKey": "[listKeys('scriptStorage', '2023-05-01').keys[0].value]"
+        },
         "environmentVariables": [
           {
             "name": "PACKAGE_URL",
@@ -858,11 +928,143 @@
             "value": "[subscription().subscriptionId]"
           }
         ],
-        "scriptContent": "      set -eu\n      set -o pipefail\n\n      echo \"=== Downloading package zip from $PACKAGE_URL ===\"\n      curl -sSL --fail -o /tmp/package.zip \"$PACKAGE_URL\"\n      SIZE=$(stat -c%s /tmp/package.zip)\n      echo \"Downloaded $SIZE bytes\"\n\n      ARM_BASE=\"https://management.azure.com/subscriptions/$SUBSCRIPTION_ID/resourceGroups/$RESOURCE_GROUP/providers/Microsoft.Web/sites/$FUNCTION_APP_NAME\"\n      echo \"=== Waiting for $FUNCTION_APP_NAME state == Running ===\"\n      STATE=\"\"\n      for i in $(seq 1 60); do\n        STATE=$(az rest --method get --url \"$ARM_BASE?api-version=2024-04-01\" --query \"properties.state\" -o tsv 2>/dev/null || echo \"\")\n        echo \"Probe $i: state=$STATE\"\n        if [ \"$STATE\" = \"Running\" ]; then\n          break\n        fi\n        sleep 10\n      done\n      if [ \"$STATE\" != \"Running\" ]; then\n        echo \"WARNING: site state never became Running (last=$STATE); will still attempt deploy\"\n      fi\n      sleep 30\n\n      echo \"=== Deploying via 'az functionapp deployment source config-zip' ===\"\n      DEPLOY_OK=\"\"\n      for i in 1 2 3 4 5; do\n        echo \"Deploy attempt $i\"\n        if az functionapp deployment source config-zip \\\n              --resource-group \"$RESOURCE_GROUP\" \\\n              --name \"$FUNCTION_APP_NAME\" \\\n              --src /tmp/package.zip \\\n              --build-remote true \\\n              --timeout 600 2>&1; then\n          DEPLOY_OK=\"yes\"\n          break\n        fi\n        echo \"Attempt $i failed; sleeping 30s\"\n        sleep 30\n      done\n\n      if [ -z \"$DEPLOY_OK\" ]; then\n        echo \"=== Fallback: POST https://$FUNCTION_APP_NAME.azurewebsites.net/api/publish ===\"\n        TOKEN=$(az account get-access-token --resource https://management.azure.com --query accessToken -o tsv)\n        HTTP=\"\"\n        for i in 1 2 3 4 5; do\n          echo \"Fallback attempt $i\"\n          HTTP=$(curl -sS -o /tmp/resp.txt -w \"%{http_code}\" \\\n                 -X POST \"https://$FUNCTION_APP_NAME.azurewebsites.net/api/publish?RemoteBuild=true\" \\\n                 -H \"Authorization: Bearer $TOKEN\" \\\n                 -H \"Content-Type: application/zip\" \\\n                 --data-binary @/tmp/package.zip || echo \"000\")\n          echo \"HTTP $HTTP\"\n          if [ \"$HTTP\" = \"200\" ] || [ \"$HTTP\" = \"202\" ]; then\n            DEPLOY_OK=\"yes\"\n            break\n          fi\n          echo \"Response body:\"; cat /tmp/resp.txt; echo\n          sleep 30\n        done\n      fi\n\n      if [ -z \"$DEPLOY_OK\" ]; then\n        echo \"ERROR: code deploy failed via both 'az functionapp deployment source config-zip' and POST /api/publish.\" >&2\n        echo \"Resources are provisioned correctly. Finish the deploy manually:\" >&2\n        echo \"  cd accelerators/sharepoint-connector\" >&2\n        echo \"  func azure functionapp publish $FUNCTION_APP_NAME --python --build remote\" >&2\n        echo \"See README section S1 for details.\" >&2\n        exit 1\n      fi\n      echo \"Code deploy succeeded. Flex will recreate workers and sync triggers.\"\n    "
+        "scriptContent": "      set -eu\n      set -o pipefail\n\n      echo \"=== Downloading package zip from $PACKAGE_URL ===\"\n      curl -sSL --fail -o /tmp/package.zip \"$PACKAGE_URL\"\n      SIZE=$(stat -c%s /tmp/package.zip)\n      echo \"Downloaded $SIZE bytes\"\n\n      # ----------------------------------------------------------------\n      # Wait for the Function App's runtime to finish its first-time\n      # provisioning. Until siteProperties.state == \"Running\" any deploy\n      # call (front-end /api/publish OR ARM onedeploy) returns 404. We\n      # poll the ARM resource directly because it's reachable even when\n      # the data-plane host is still cold.\n      # ----------------------------------------------------------------\n      ARM_BASE=\"https://management.azure.com/subscriptions/$SUBSCRIPTION_ID/resourceGroups/$RESOURCE_GROUP/providers/Microsoft.Web/sites/$FUNCTION_APP_NAME\"\n      echo \"=== Waiting for $FUNCTION_APP_NAME state == Running ===\"\n      STATE=\"\"\n      for i in $(seq 1 60); do\n        STATE=$(az rest --method get --url \"$ARM_BASE?api-version=2024-04-01\" --query \"properties.state\" -o tsv 2>/dev/null || echo \"\")\n        echo \"Probe $i: state=$STATE\"\n        if [ \"$STATE\" = \"Running\" ]; then\n          break\n        fi\n        sleep 10\n      done\n      if [ \"$STATE\" != \"Running\" ]; then\n        echo \"WARNING: site state never became Running (last=$STATE); will still attempt deploy\"\n      fi\n      # Belt-and-braces: even after state=Running, give the host another\n      # 30s to wire up the deploy route — saves an unnecessary first 404.\n      sleep 30\n\n      # ----------------------------------------------------------------\n      # Primary path: az functionapp deployment source config-zip\n      #\n      # On Flex Consumption this calls the publish endpoint via the\n      # control plane, handling auth, polling, and ARM-side retries\n      # internally. It's the same path `func azure functionapp publish`\n      # uses on Flex.\n      # ----------------------------------------------------------------\n      echo \"=== Deploying via 'az functionapp deployment source config-zip' ===\"\n      DEPLOY_OK=\"\"\n      for i in 1 2 3 4 5; do\n        echo \"Deploy attempt $i\"\n        if az functionapp deployment source config-zip \\\n              --resource-group \"$RESOURCE_GROUP\" \\\n              --name \"$FUNCTION_APP_NAME\" \\\n              --src /tmp/package.zip \\\n              --build-remote true \\\n              --timeout 600 2>&1; then\n          DEPLOY_OK=\"yes\"\n          break\n        fi\n        echo \"Attempt $i failed; sleeping 30s\"\n        sleep 30\n      done\n\n      # ----------------------------------------------------------------\n      # Fallback: direct POST to <site>/api/publish with the management\n      # bearer token. Some Flex regions/SDKs route this differently than\n      # the CLI, so it's worth trying when the CLI path didn't take.\n      # ----------------------------------------------------------------\n      if [ -z \"$DEPLOY_OK\" ]; then\n        echo \"=== Fallback: POST https://$FUNCTION_APP_NAME.azurewebsites.net/api/publish ===\"\n        TOKEN=$(az account get-access-token --resource https://management.azure.com --query accessToken -o tsv)\n        HTTP=\"\"\n        for i in 1 2 3 4 5; do\n          echo \"Fallback attempt $i\"\n          HTTP=$(curl -sS -o /tmp/resp.txt -w \"%{http_code}\" \\\n                 -X POST \"https://$FUNCTION_APP_NAME.azurewebsites.net/api/publish?RemoteBuild=true\" \\\n                 -H \"Authorization: Bearer $TOKEN\" \\\n                 -H \"Content-Type: application/zip\" \\\n                 --data-binary @/tmp/package.zip || echo \"000\")\n          echo \"HTTP $HTTP\"\n          if [ \"$HTTP\" = \"200\" ] || [ \"$HTTP\" = \"202\" ]; then\n            DEPLOY_OK=\"yes\"\n            break\n          fi\n          echo \"Response body:\"; cat /tmp/resp.txt; echo\n          sleep 30\n        done\n      fi\n\n      if [ -z \"$DEPLOY_OK\" ]; then\n        echo \"ERROR: code deploy failed via both 'az functionapp deployment source config-zip' and POST /api/publish.\" >&2\n        echo \"Resources are provisioned correctly — finish the deploy manually:\" >&2\n        echo \"  cd accelerators/sharepoint-connector\" >&2\n        echo \"  func azure functionapp publish $FUNCTION_APP_NAME --python --build remote\" >&2\n        echo \"See README section S1 for details.\" >&2\n        exit 1\n      fi\n      echo \"Code deploy succeeded — Flex will recreate workers and sync triggers.\"\n    "
       },
       "dependsOn": [
         "deployerIdentity",
         "deployerWebsiteRole",
+        "functionApp",
+        "scriptStorage"
+      ]
+    },
+    "byoStorageRoleAssignments": {
+      "condition": "[variables('useExistingStorage')]",
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "byo-storage-roles",
+      "resourceGroup": "[variables('existingStorageRg')]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "storageAccountName": {
+            "value": "[variables('existingStorageName')]"
+          },
+          "principalId": {
+            "value": "[reference('functionApp', '2024-04-01', 'full').identity.principalId]"
+          },
+          "storageBlobDataOwnerRoleId": {
+            "value": "[variables('storageBlobDataOwnerRoleId')]"
+          },
+          "storageAccountContributorRoleId": {
+            "value": "[variables('storageAccountContributorRoleId')]"
+          },
+          "storageQueueDataContributorRoleId": {
+            "value": "[variables('storageQueueDataContributorRoleId')]"
+          },
+          "storageTableDataContributorRoleId": {
+            "value": "[variables('storageTableDataContributorRoleId')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.42.1.51946",
+              "templateHash": "15425564013563641843"
+            }
+          },
+          "parameters": {
+            "storageAccountName": {
+              "type": "string",
+              "metadata": {
+                "description": "Name of the existing (BYO) storage account in this resource group."
+              }
+            },
+            "principalId": {
+              "type": "string",
+              "metadata": {
+                "description": "Principal ID of the Function App system-assigned managed identity."
+              }
+            },
+            "storageBlobDataOwnerRoleId": {
+              "type": "string",
+              "metadata": {
+                "description": "Role definition ID (GUID only) for Storage Blob Data Owner."
+              }
+            },
+            "storageAccountContributorRoleId": {
+              "type": "string",
+              "metadata": {
+                "description": "Role definition ID (GUID only) for Storage Account Contributor."
+              }
+            },
+            "storageQueueDataContributorRoleId": {
+              "type": "string",
+              "metadata": {
+                "description": "Role definition ID (GUID only) for Storage Queue Data Contributor."
+              }
+            },
+            "storageTableDataContributorRoleId": {
+              "type": "string",
+              "metadata": {
+                "description": "Role definition ID (GUID only) for Storage Table Data Contributor."
+              }
+            }
+          },
+          "resources": [
+            {
+              "type": "Microsoft.Authorization/roleAssignments",
+              "apiVersion": "2022-04-01",
+              "scope": "[resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName'))]",
+              "name": "[guid(resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName')), parameters('storageBlobDataOwnerRoleId'), parameters('principalId'))]",
+              "properties": {
+                "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', parameters('storageBlobDataOwnerRoleId'))]",
+                "principalId": "[parameters('principalId')]",
+                "principalType": "ServicePrincipal"
+              }
+            },
+            {
+              "type": "Microsoft.Authorization/roleAssignments",
+              "apiVersion": "2022-04-01",
+              "scope": "[resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName'))]",
+              "name": "[guid(resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName')), parameters('storageAccountContributorRoleId'), parameters('principalId'))]",
+              "properties": {
+                "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', parameters('storageAccountContributorRoleId'))]",
+                "principalId": "[parameters('principalId')]",
+                "principalType": "ServicePrincipal"
+              }
+            },
+            {
+              "type": "Microsoft.Authorization/roleAssignments",
+              "apiVersion": "2022-04-01",
+              "scope": "[resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName'))]",
+              "name": "[guid(resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName')), parameters('storageQueueDataContributorRoleId'), parameters('principalId'))]",
+              "properties": {
+                "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', parameters('storageQueueDataContributorRoleId'))]",
+                "principalId": "[parameters('principalId')]",
+                "principalType": "ServicePrincipal"
+              }
+            },
+            {
+              "type": "Microsoft.Authorization/roleAssignments",
+              "apiVersion": "2022-04-01",
+              "scope": "[resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName'))]",
+              "name": "[guid(resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName')), parameters('storageTableDataContributorRoleId'), parameters('principalId'))]",
+              "properties": {
+                "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', parameters('storageTableDataContributorRoleId'))]",
+                "principalId": "[parameters('principalId')]",
+                "principalType": "ServicePrincipal"
+              }
+            }
+          ]
+        }
+      },
+      "dependsOn": [
         "functionApp"
       ]
     }
@@ -878,7 +1080,19 @@
     },
     "storageAccountName": {
       "type": "string",
-      "value": "[variables('storageName')]"
+      "value": "[variables('effectiveStorageName')]"
+    },
+    "storageAccountId": {
+      "type": "string",
+      "value": "[variables('effectiveStorageId')]"
+    },
+    "usedExistingStorage": {
+      "type": "bool",
+      "value": "[variables('useExistingStorage')]"
+    },
+    "scriptStorageAccountName": {
+      "type": "string",
+      "value": "[variables('scriptStorageName')]"
     },
     "searchEndpoint": {
       "type": "string",

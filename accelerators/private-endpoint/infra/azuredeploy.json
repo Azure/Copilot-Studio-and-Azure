@@ -1,0 +1,479 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "_generator": {
+      "name": "bicep",
+      "version": "0.42.1.51946",
+      "templateHash": "4396912537264980739"
+    }
+  },
+  "parameters": {
+    "baseName": {
+      "type": "string",
+      "defaultValue": "prvendcu",
+      "minLength": 3,
+      "maxLength": 11,
+      "metadata": {
+        "description": "Base name (3-11 chars, lowercase alphanumerics) used to derive resource names."
+      }
+    },
+    "powerPlatformRegion": {
+      "type": "string",
+      "defaultValue": "unitedstates",
+      "allowedValues": [
+        "unitedstates",
+        "europe",
+        "unitedkingdom",
+        "japan",
+        "australia",
+        "asia",
+        "singapore",
+        "sweden"
+      ],
+      "metadata": {
+        "description": "Power Platform region. Determines primary Azure region (Content Understanding-supported), paired secondary Azure region, and Enterprise Policy location. Only PP regions where at least one paired Azure region supports Content Understanding are listed."
+      }
+    },
+    "powerPlatformEnvironmentId": {
+      "type": "string",
+      "metadata": {
+        "description": "Power Platform environment GUID (NOT the org URL). Persisted as a deployment output for downstream linking."
+      }
+    },
+    "vnetAddressPrefix": {
+      "type": "string",
+      "defaultValue": "10.50.0.0/16",
+      "metadata": {
+        "description": "Primary VNet address space."
+      }
+    },
+    "peSubnetPrefix": {
+      "type": "string",
+      "defaultValue": "10.50.1.0/24",
+      "metadata": {
+        "description": "Private Endpoint subnet prefix (must be inside vnetAddressPrefix)."
+      }
+    },
+    "ppSubnetPrefix": {
+      "type": "string",
+      "defaultValue": "10.50.2.0/24",
+      "metadata": {
+        "description": "Power Platform delegated subnet prefix (must be /24, no NSG, no route table)."
+      }
+    },
+    "secondaryVnetAddressPrefix": {
+      "type": "string",
+      "defaultValue": "10.51.0.0/16",
+      "metadata": {
+        "description": "Secondary VNet address space (must NOT overlap primary). Ignored for single-region PP geos (singapore, sweden)."
+      }
+    },
+    "secondaryPpSubnetPrefix": {
+      "type": "string",
+      "defaultValue": "10.51.2.0/24",
+      "metadata": {
+        "description": "Secondary PP-delegated subnet prefix (/24, must be inside secondaryVnetAddressPrefix). Ignored for single-region PP geos."
+      }
+    },
+    "enterprisePolicyName": {
+      "type": "string",
+      "defaultValue": "ep-vnet-prvendcu",
+      "metadata": {
+        "description": "Name for the Enterprise Policy resource."
+      }
+    },
+    "tags": {
+      "type": "object",
+      "defaultValue": {
+        "workload": "content-understanding-pe",
+        "managedBy": "arm-one-click"
+      },
+      "metadata": {
+        "description": "Tags applied to all resources."
+      }
+    }
+  },
+  "variables": {
+    "regionMap": {
+      "unitedstates": {
+        "primary": "westus",
+        "secondary": "eastus",
+        "ppGeo": "unitedstates"
+      },
+      "europe": {
+        "primary": "westeurope",
+        "secondary": "northeurope",
+        "ppGeo": "europe"
+      },
+      "unitedkingdom": {
+        "primary": "uksouth",
+        "secondary": "ukwest",
+        "ppGeo": "unitedkingdom"
+      },
+      "japan": {
+        "primary": "japaneast",
+        "secondary": "japanwest",
+        "ppGeo": "japan"
+      },
+      "australia": {
+        "primary": "australiaeast",
+        "secondary": "australiasoutheast",
+        "ppGeo": "australia"
+      },
+      "asia": {
+        "primary": "southeastasia",
+        "secondary": "eastasia",
+        "ppGeo": "asia"
+      },
+      "singapore": {
+        "primary": "southeastasia",
+        "secondary": "",
+        "ppGeo": "singapore"
+      },
+      "sweden": {
+        "primary": "swedencentral",
+        "secondary": "",
+        "ppGeo": "sweden"
+      }
+    },
+    "location": "[variables('regionMap')[parameters('powerPlatformRegion')].primary]",
+    "secondaryLocation": "[variables('regionMap')[parameters('powerPlatformRegion')].secondary]",
+    "powerPlatformGeo": "[variables('regionMap')[parameters('powerPlatformRegion')].ppGeo]",
+    "deploySecondary": "[not(empty(variables('secondaryLocation')))]",
+    "vnetName": "[format('vnet-{0}', parameters('baseName'))]",
+    "vnetNameSec": "[format('vnet-{0}-sec', parameters('baseName'))]",
+    "peSubnetName": "snet-pe",
+    "ppSubnetName": "snet-powerplatform",
+    "aiName": "[format('ais-{0}-{1}', parameters('baseName'), uniqueString(resourceGroup().id))]",
+    "peName": "[format('pe-{0}', variables('aiName'))]",
+    "peNicName": "[format('nic-{0}', variables('peName'))]",
+    "privateDnsZoneNames": [
+      "privatelink.cognitiveservices.azure.com",
+      "privatelink.openai.azure.com",
+      "privatelink.services.ai.azure.com"
+    ]
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Network/virtualNetworks",
+      "apiVersion": "2024-05-01",
+      "name": "[variables('vnetName')]",
+      "location": "[variables('location')]",
+      "tags": "[parameters('tags')]",
+      "properties": {
+        "addressSpace": {
+          "addressPrefixes": [
+            "[parameters('vnetAddressPrefix')]"
+          ]
+        },
+        "subnets": [
+          {
+            "name": "[variables('peSubnetName')]",
+            "properties": {
+              "addressPrefixes": [
+                "[parameters('peSubnetPrefix')]"
+              ],
+              "privateEndpointNetworkPolicies": "Disabled"
+            }
+          },
+          {
+            "name": "[variables('ppSubnetName')]",
+            "properties": {
+              "addressPrefixes": [
+                "[parameters('ppSubnetPrefix')]"
+              ],
+              "delegations": [
+                {
+                  "name": "Microsoft.PowerPlatform.enterprisePolicies",
+                  "properties": {
+                    "serviceName": "Microsoft.PowerPlatform/enterprisePolicies"
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "condition": "[variables('deploySecondary')]",
+      "type": "Microsoft.Network/virtualNetworks",
+      "apiVersion": "2024-05-01",
+      "name": "[variables('vnetNameSec')]",
+      "location": "[if(variables('deploySecondary'), variables('secondaryLocation'), variables('location'))]",
+      "tags": "[parameters('tags')]",
+      "properties": {
+        "addressSpace": {
+          "addressPrefixes": [
+            "[parameters('secondaryVnetAddressPrefix')]"
+          ]
+        },
+        "subnets": [
+          {
+            "name": "[variables('ppSubnetName')]",
+            "properties": {
+              "addressPrefixes": [
+                "[parameters('secondaryPpSubnetPrefix')]"
+              ],
+              "delegations": [
+                {
+                  "name": "Microsoft.PowerPlatform.enterprisePolicies",
+                  "properties": {
+                    "serviceName": "Microsoft.PowerPlatform/enterprisePolicies"
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "condition": "[variables('deploySecondary')]",
+      "type": "Microsoft.Network/virtualNetworks/virtualNetworkPeerings",
+      "apiVersion": "2024-05-01",
+      "name": "[format('{0}/{1}', variables('vnetName'), 'peer-pri-to-sec')]",
+      "properties": {
+        "allowVirtualNetworkAccess": true,
+        "allowForwardedTraffic": false,
+        "allowGatewayTransit": false,
+        "useRemoteGateways": false,
+        "remoteVirtualNetwork": {
+          "id": "[resourceId('Microsoft.Network/virtualNetworks', variables('vnetNameSec'))]"
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Network/virtualNetworks', variables('vnetName'))]",
+        "[resourceId('Microsoft.Network/virtualNetworks', variables('vnetNameSec'))]"
+      ]
+    },
+    {
+      "condition": "[variables('deploySecondary')]",
+      "type": "Microsoft.Network/virtualNetworks/virtualNetworkPeerings",
+      "apiVersion": "2024-05-01",
+      "name": "[format('{0}/{1}', variables('vnetNameSec'), 'peer-sec-to-pri')]",
+      "properties": {
+        "allowVirtualNetworkAccess": true,
+        "allowForwardedTraffic": false,
+        "allowGatewayTransit": false,
+        "useRemoteGateways": false,
+        "remoteVirtualNetwork": {
+          "id": "[resourceId('Microsoft.Network/virtualNetworks', variables('vnetName'))]"
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Network/virtualNetworks', variables('vnetName'))]",
+        "[resourceId('Microsoft.Network/virtualNetworks', variables('vnetNameSec'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.CognitiveServices/accounts",
+      "apiVersion": "2024-10-01",
+      "name": "[variables('aiName')]",
+      "location": "[variables('location')]",
+      "tags": "[parameters('tags')]",
+      "kind": "AIServices",
+      "sku": {
+        "name": "S0"
+      },
+      "identity": {
+        "type": "SystemAssigned"
+      },
+      "properties": {
+        "customSubDomainName": "[variables('aiName')]",
+        "publicNetworkAccess": "Disabled",
+        "networkAcls": {
+          "defaultAction": "Deny",
+          "bypass": "AzureServices",
+          "ipRules": [],
+          "virtualNetworkRules": []
+        },
+        "disableLocalAuth": false
+      }
+    },
+    {
+      "copy": {
+        "name": "dnsZones",
+        "count": "[length(variables('privateDnsZoneNames'))]"
+      },
+      "type": "Microsoft.Network/privateDnsZones",
+      "apiVersion": "2024-06-01",
+      "name": "[variables('privateDnsZoneNames')[copyIndex()]]",
+      "location": "global",
+      "tags": "[parameters('tags')]"
+    },
+    {
+      "copy": {
+        "name": "dnsLinks",
+        "count": "[length(variables('privateDnsZoneNames'))]"
+      },
+      "type": "Microsoft.Network/privateDnsZones/virtualNetworkLinks",
+      "apiVersion": "2024-06-01",
+      "name": "[format('{0}/{1}', variables('privateDnsZoneNames')[copyIndex()], format('{0}-link', variables('vnetName')))]",
+      "location": "global",
+      "properties": {
+        "registrationEnabled": false,
+        "virtualNetwork": {
+          "id": "[resourceId('Microsoft.Network/virtualNetworks', variables('vnetName'))]"
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Network/privateDnsZones', variables('privateDnsZoneNames')[copyIndex()])]",
+        "[resourceId('Microsoft.Network/virtualNetworks', variables('vnetName'))]"
+      ]
+    },
+    {
+      "copy": {
+        "name": "dnsLinksSec",
+        "count": "[length(variables('privateDnsZoneNames'))]"
+      },
+      "condition": "[variables('deploySecondary')]",
+      "type": "Microsoft.Network/privateDnsZones/virtualNetworkLinks",
+      "apiVersion": "2024-06-01",
+      "name": "[format('{0}/{1}', variables('privateDnsZoneNames')[copyIndex()], format('{0}-link', variables('vnetNameSec')))]",
+      "location": "global",
+      "properties": {
+        "registrationEnabled": false,
+        "virtualNetwork": {
+          "id": "[resourceId('Microsoft.Network/virtualNetworks', variables('vnetNameSec'))]"
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Network/privateDnsZones', variables('privateDnsZoneNames')[copyIndex()])]",
+        "[resourceId('Microsoft.Network/virtualNetworks', variables('vnetNameSec'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.Network/privateEndpoints",
+      "apiVersion": "2024-05-01",
+      "name": "[variables('peName')]",
+      "location": "[variables('location')]",
+      "tags": "[parameters('tags')]",
+      "properties": {
+        "customNetworkInterfaceName": "[variables('peNicName')]",
+        "subnet": {
+          "id": "[format('{0}/subnets/{1}', resourceId('Microsoft.Network/virtualNetworks', variables('vnetName')), variables('peSubnetName'))]"
+        },
+        "privateLinkServiceConnections": [
+          {
+            "name": "[format('plsc-{0}', variables('aiName'))]",
+            "properties": {
+              "privateLinkServiceId": "[resourceId('Microsoft.CognitiveServices/accounts', variables('aiName'))]",
+              "groupIds": [
+                "account"
+              ]
+            }
+          }
+        ]
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.CognitiveServices/accounts', variables('aiName'))]",
+        "[resourceId('Microsoft.Network/virtualNetworks', variables('vnetName'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.Network/privateEndpoints/privateDnsZoneGroups",
+      "apiVersion": "2024-05-01",
+      "name": "[format('{0}/{1}', variables('peName'), 'default')]",
+      "properties": {
+        "copy": [
+          {
+            "name": "privateDnsZoneConfigs",
+            "count": "[length(variables('privateDnsZoneNames'))]",
+            "input": {
+              "name": "[replace(variables('privateDnsZoneNames')[copyIndex('privateDnsZoneConfigs')], '.', '-')]",
+              "properties": {
+                "privateDnsZoneId": "[resourceId('Microsoft.Network/privateDnsZones', variables('privateDnsZoneNames')[copyIndex('privateDnsZoneConfigs')])]"
+              }
+            }
+          }
+        ]
+      },
+      "dependsOn": [
+        "dnsLinks",
+        "dnsZones",
+        "[resourceId('Microsoft.Network/privateEndpoints', variables('peName'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.PowerPlatform/enterprisePolicies",
+      "apiVersion": "2020-10-30-preview",
+      "name": "[parameters('enterprisePolicyName')]",
+      "location": "[variables('powerPlatformGeo')]",
+      "tags": "[parameters('tags')]",
+      "kind": "NetworkInjection",
+      "properties": {
+        "networkInjection": {
+          "virtualNetworks": "[if(variables('deploySecondary'), createArray(createObject('id', resourceId('Microsoft.Network/virtualNetworks', variables('vnetName')), 'subnet', createObject('name', variables('ppSubnetName'))), createObject('id', resourceId('Microsoft.Network/virtualNetworks', variables('vnetNameSec')), 'subnet', createObject('name', variables('ppSubnetName')))), createArray(createObject('id', resourceId('Microsoft.Network/virtualNetworks', variables('vnetName')), 'subnet', createObject('name', variables('ppSubnetName')))))]"
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Network/virtualNetworks', variables('vnetName'))]",
+        "[resourceId('Microsoft.Network/virtualNetworks', variables('vnetNameSec'))]"
+      ]
+    }
+  ],
+  "outputs": {
+    "aiAccountName": {
+      "type": "string",
+      "value": "[variables('aiName')]"
+    },
+    "aiAccountEndpoint": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.CognitiveServices/accounts', variables('aiName')), '2024-10-01').endpoint]"
+    },
+    "aiAccountResourceId": {
+      "type": "string",
+      "value": "[resourceId('Microsoft.CognitiveServices/accounts', variables('aiName'))]"
+    },
+    "vnetResourceId": {
+      "type": "string",
+      "value": "[resourceId('Microsoft.Network/virtualNetworks', variables('vnetName'))]"
+    },
+    "vnetSecondaryResourceId": {
+      "type": "string",
+      "value": "[if(variables('deploySecondary'), resourceId('Microsoft.Network/virtualNetworks', variables('vnetNameSec')), '')]"
+    },
+    "ppSubnetResourceId": {
+      "type": "string",
+      "value": "[format('{0}/subnets/{1}', resourceId('Microsoft.Network/virtualNetworks', variables('vnetName')), variables('ppSubnetName'))]"
+    },
+    "ppSubnetSecondaryResourceId": {
+      "type": "string",
+      "value": "[if(variables('deploySecondary'), format('{0}/subnets/{1}', resourceId('Microsoft.Network/virtualNetworks', variables('vnetNameSec')), variables('ppSubnetName')), '')]"
+    },
+    "peSubnetResourceId": {
+      "type": "string",
+      "value": "[format('{0}/subnets/{1}', resourceId('Microsoft.Network/virtualNetworks', variables('vnetName')), variables('peSubnetName'))]"
+    },
+    "privateEndpointId": {
+      "type": "string",
+      "value": "[resourceId('Microsoft.Network/privateEndpoints', variables('peName'))]"
+    },
+    "enterprisePolicyId": {
+      "type": "string",
+      "value": "[resourceId('Microsoft.PowerPlatform/enterprisePolicies', parameters('enterprisePolicyName'))]"
+    },
+    "powerPlatformEnvironmentId": {
+      "type": "string",
+      "value": "[parameters('powerPlatformEnvironmentId')]"
+    },
+    "powerPlatformRegion": {
+      "type": "string",
+      "value": "[parameters('powerPlatformRegion')]"
+    },
+    "location": {
+      "type": "string",
+      "value": "[variables('location')]"
+    },
+    "secondaryLocation": {
+      "type": "string",
+      "value": "[variables('secondaryLocation')]"
+    },
+    "powerPlatformGeo": {
+      "type": "string",
+      "value": "[variables('powerPlatformGeo')]"
+    }
+  }
+}
