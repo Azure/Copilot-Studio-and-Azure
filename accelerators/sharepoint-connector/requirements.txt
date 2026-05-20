@@ -177,7 +177,7 @@ tzdata==2025.3 ; sys_platform == 'win32'
     # via tzlocal
 tzlocal==5.3.1
     # via extract-msg
-urllib3==2.6.3
+urllib3==2.7.0
     # via requests
 werkzeug==3.1.6
     # via azure-functions
