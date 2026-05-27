@@ -18,6 +18,9 @@ On this case importing the [Azure AI Search Flow] we were able to connect Copilo
 > **Why solutions?** Solutions package apps, flows, connectors, env‑vars and make **ALM** (export/import, managed vs unmanaged) consistent across environments. [\[learn.microsoft.com\]](https://learn.microsoft.com/en-us/power-apps/maker/data-platform/import-update-export-solutions)
 
 ***
+### Video Walkthrough
+
+[Video Walkthrough Azure AI Search Flow Accelerator](https://www.youtube.com/watch?v=LGc93Jma7iI)
 
 # 2) Import the solution into your target environment
 
