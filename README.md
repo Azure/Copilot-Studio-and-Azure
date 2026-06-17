@@ -61,6 +61,7 @@ By leveraging the [Solution Accelerators](docs/Solution-Accelerators.md), we can
 - The [Azure Copilot Pricing Accelerator](/accelerators/azure-copilot-pricing) enables GitHub Copilot to fetch real-time Azure retail pricing and estimate Copilot Studio/foundry agent credit consumption directly inside your editor.
 - The [Voice Channel Accelerator](/accelerators/voice-channel) makes a Copilot Studio agent voice-capable across three surfaces — a custom Voice Live web UI, Microsoft Teams, and Microsoft 365 Copilot Chat — **without requiring the Omnichannel Engagement Hub license**. One Foundry Agent Service "IT Assistant" is shared across all three surfaces and calls the "Microsoft Learn Assistant" Copilot Studio agent (grounded via the Microsoft Learn MCP server) for answers. One-command `azd up` deployment, adapted from Azure-Samples/call-center-voice-agent-accelerator.
 - The [Content Understanding Accelerator](/accelerators/contentunderstanding) enables Copilot Studio to use Azure AI Content Understanding for multimodal extraction (documents, images, audio, and video), automatically transforming unstructured enterprise content into structured and grounded outputs.
+- The [Visio process to text](/accelerators/visio-process-to-text) Convert Visio process / flowchart diagrams (.vsdx and .vsd) into plain-text process pseudo information so they can be ingested by Copilot Studio (or any other RAG pipeline) which does not support Visio files.
   
 # Project Kickoff
 
