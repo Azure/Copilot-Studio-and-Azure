@@ -128,7 +128,7 @@ pydantic==2.12.5
     # via openai
 pydantic-core==2.41.5
     # via pydantic
-pyjwt==2.12.0
+pyjwt==2.13.0
     # via msal
 pymupdf==1.27.1
     # via sharepoint-connector
