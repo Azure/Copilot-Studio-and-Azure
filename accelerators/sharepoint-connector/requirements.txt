@@ -49,7 +49,7 @@ colorclass==2.2.2
     # via oletools
 compressed-rtf==1.0.7
     # via extract-msg
-cryptography==46.0.7
+cryptography==50.0.0
     # via
     #   azure-identity
     #   msal
