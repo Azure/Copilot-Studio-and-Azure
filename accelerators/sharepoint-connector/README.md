@@ -80,7 +80,7 @@ Editable source (open in [draw.io](https://app.diagrams.net) or the VS Code Draw
 
 A ~9 minute end-to-end walkthrough — architecture, deployment, post-deployment configuration, and a smoke test against a real SharePoint site. 
 
-https://github.com/user-attachments/assets/bd42ea55-6cf8-4e6d-99e1-8a5eb33a6fd4
+[https://github.com/user-attachments/assets/bd42ea55-6cf8-4e6d-99e1-8a5eb33a6fd4](https://www.youtube.com/watch?v=G87D4JWB2I8&t=4s)
 
 ### Prerequisites
 
