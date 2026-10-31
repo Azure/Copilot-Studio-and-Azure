@@ -34,7 +34,7 @@ beautifulsoup4==4.13.5
     # via
     #   extract-msg
     #   sharepoint-connector
-certifi==2026.2.25
+certifi==2026.10.18
     # via
     #   httpcore
     #   httpx
