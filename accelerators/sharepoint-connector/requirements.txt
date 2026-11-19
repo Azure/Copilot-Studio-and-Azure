@@ -179,7 +179,7 @@ tzlocal==5.3.1
     # via extract-msg
 urllib3==2.7.0
     # via requests
-werkzeug==3.1.6
+werkzeug==3.1.9
     # via azure-functions
 win-unicode-console==0.5 ; platform_python_implementation != 'PyPy' and sys_platform == 'win32'
     # via pcodedmp
