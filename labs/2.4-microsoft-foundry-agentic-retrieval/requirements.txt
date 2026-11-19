@@ -74,7 +74,7 @@ comm==0.2.3
     # via
     #   ipykernel
     #   ipywidgets
-cryptography==46.0.7
+cryptography==50.0.0
     # via
     #   azure-identity
     #   azure-storage-blob
